@@ -24,13 +24,14 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);
 
-    let text = Span::styled(&app.search_text, Style::default().fg(Color::Green));
+    let text = Span::styled(app.search_text(), Style::default().fg(Color::Green));
     let area = center(
         chunks[1],
         Constraint::Length(text.width() as u16),
         Constraint::Length(1),
     );
     frame.render_widget(text, area);
+    frame.set_cursor(area.x + app.cursor_idx() as u16, area.y);
 
     let current_keys_hint = {
         match app.current_screen {

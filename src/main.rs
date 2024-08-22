@@ -40,25 +40,23 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
                 CurrentScreen::Searching => match (key.code, key.modifiers) {
                     (KeyCode::Char('w'), KeyModifiers::CONTROL)
                     | (KeyCode::Backspace, KeyModifiers::ALT) => {
-                        while let Some(' ') = app.search_text.pop() {}
-                        loop {
-                            match app.search_text.pop() {
-                                Some(' ') | None => {
-                                    break;
-                                }
-                                _ => {}
-                            }
-                        }
+                        app.delete_word();
                     }
                     (KeyCode::Char('u'), KeyModifiers::CONTROL)
                     | (KeyCode::Backspace, KeyModifiers::META) => {
-                        app.search_text.clear();
+                        app.clear_search_text();
                     }
                     (KeyCode::Char(value), _) => {
-                        app.search_text.push(value);
+                        app.enter_char(value);
                     }
                     (KeyCode::Backspace, _) => {
-                        app.search_text.pop();
+                        app.delete_char();
+                    }
+                    (KeyCode::Left, _) => {
+                        app.move_cursor_left();
+                    }
+                    (KeyCode::Right, _) => {
+                        app.move_cursor_right();
                     }
                     _ => {}
                 },
