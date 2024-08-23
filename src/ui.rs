@@ -1,12 +1,46 @@
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Style},
+    style::{Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, Paragraph},
     Frame,
 };
 
 use crate::app::{App, CurrentScreen};
+
+fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
+    let block = Block::bordered()
+        .border_style(Style::new().green())
+        .title("Enter some text to search:");
+    let search_input = Paragraph::new(app.search_text_field.text());
+    let area = flex_area(
+        rect,
+        Constraint::Percentage(80),
+        Constraint::Length(3),
+        Flex::Center,
+    );
+
+    frame.render_widget(search_input.block(block), area);
+    frame.set_cursor(
+        area.x + app.search_text_field.cursor_idx() as u16 + 1,
+        area.y + 1,
+    );
+}
+
+fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
+    let block = Block::bordered()
+        .border_style(Style::new())
+        .title("Text searched for:");
+    let search_input = Paragraph::new(app.search_text_field.text());
+    let area = flex_area(
+        rect,
+        Constraint::Percentage(80),
+        Constraint::Length(3),
+        Flex::Start,
+    );
+
+    frame.render_widget(search_input.block(block), area);
+}
 
 pub fn ui(frame: &mut Frame, app: &App) {
     let chunks = Layout::default()
@@ -24,17 +58,15 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);
 
-    let text = Span::styled(
-        app.search_text_field.text(),
-        Style::default().fg(Color::Green),
-    );
-    let area = center(
-        chunks[1],
-        Constraint::Length(text.width() as u16),
-        Constraint::Length(1),
-    );
-    frame.render_widget(text, area);
-    frame.set_cursor(area.x + app.search_text_field.cursor_idx() as u16, area.y);
+    match app.current_screen {
+        CurrentScreen::Searching => {
+            render_search_view(frame, app, chunks[1]);
+        }
+        CurrentScreen::Confirmation => {
+            render_confirmation_view(frame, app, chunks[1]);
+        }
+        CurrentScreen::Results => {}
+    }
 
     let current_keys_hint = {
         match app.current_screen {
@@ -50,10 +82,15 @@ pub fn ui(frame: &mut Frame, app: &App) {
     frame.render_widget(footer, chunks[2]);
 }
 
-fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+fn flex_area(
+    area: Rect,
+    horizontal: Constraint,
+    vertical: Constraint,
+    flex_vertical: Flex,
+) -> Rect {
     let [area] = Layout::horizontal([horizontal])
         .flex(Flex::Center)
         .areas(area);
-    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+    let [area] = Layout::vertical([vertical]).flex(flex_vertical).areas(area);
     area
 }

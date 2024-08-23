@@ -62,6 +62,9 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
         (KeyCode::Delete, _) => {
             app.search_text_field.delete_char_forward();
         }
+        (KeyCode::Enter, _) => {
+            app.current_screen = CurrentScreen::Confirmation;
+        }
         (KeyCode::Char(value), _) => {
             app.search_text_field.enter_char(value);
         }
