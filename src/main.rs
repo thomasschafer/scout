@@ -4,7 +4,7 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
         event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEventKind,
+            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
             KeyModifiers,
         },
         execute,
@@ -20,13 +20,65 @@ use crate::{
     ui::ui,
 };
 
+fn handle_key_searching(app: &mut App, key: &KeyEvent) {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('w'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::ALT) => {
+            app.delete_word_backward();
+        }
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::META) => {
+            app.clear_search_text();
+        }
+        (KeyCode::Backspace, _) => {
+            app.delete_char();
+        }
+        (KeyCode::Left, KeyModifiers::ALT) | (KeyCode::Char('b') | KeyCode::Char('B'), _)
+            if key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.move_cursor_back_word();
+        }
+        (KeyCode::Home, _) => {
+            app.move_cursor_start();
+        }
+        (KeyCode::Left, _) => {
+            app.move_cursor_left();
+        }
+        (KeyCode::Right, KeyModifiers::ALT) | (KeyCode::Char('f') | KeyCode::Char('F'), _)
+            if key.modifiers.contains(KeyModifiers::ALT) =>
+        {
+            app.move_cursor_forward_word();
+        }
+        (KeyCode::Right, KeyModifiers::META) => {
+            app.move_cursor_end();
+        }
+        (KeyCode::End, _) => {
+            app.move_cursor_end();
+        }
+        (KeyCode::Right, _) => {
+            app.move_cursor_right();
+        }
+        (KeyCode::Char('d'), KeyModifiers::ALT) | (KeyCode::Delete, KeyModifiers::ALT) => {
+            app.delete_word_forward();
+        }
+        (KeyCode::Delete, _) => {
+            app.delete_char_forward();
+        }
+        (KeyCode::Char(value), _) => {
+            app.enter_char(value);
+        }
+        _ => {}
+    }
+}
+
+fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {}
+
+fn handle_key_results(app: &mut App, key: &KeyEvent) {}
+
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Release {
-                // Skip events that are not KeyEventKind::Press
                 continue;
             }
 
@@ -37,36 +89,9 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
             }
 
             match app.current_screen {
-                CurrentScreen::Searching => match (key.code, key.modifiers) {
-                    (KeyCode::Char('w'), KeyModifiers::CONTROL)
-                    | (KeyCode::Backspace, KeyModifiers::ALT) => {
-                        app.delete_word();
-                    }
-                    (KeyCode::Char('u'), KeyModifiers::CONTROL)
-                    | (KeyCode::Backspace, KeyModifiers::META) => {
-                        app.clear_search_text();
-                    }
-                    (KeyCode::Char(value), _) => {
-                        app.enter_char(value);
-                    }
-                    (KeyCode::Backspace, _) => {
-                        app.delete_char();
-                    }
-                    (KeyCode::Left, _) => {
-                        app.move_cursor_left();
-                    }
-                    (KeyCode::Right, _) => {
-                        app.move_cursor_right();
-                    }
-                    _ => {}
-                },
-                CurrentScreen::Confirmation => match key.code {
-                    _ => {}
-                },
-                CurrentScreen::Results => match key.code {
-                    _ => {}
-                },
-                _ => {}
+                CurrentScreen::Searching => handle_key_searching(app, &key),
+                CurrentScreen::Confirmation => handle_key_confirmation(app, &key),
+                CurrentScreen::Results => handle_key_results(app, &key),
             }
         }
     }
