@@ -5,7 +5,9 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.86"
-# color-eyre = "0.6.3" # TODO: use
+etcetera = "0.8.0"
+ignore = "0.4.22"
 ratatui = "0.27.0"
+regex = "1.10.6"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"

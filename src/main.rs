@@ -1,5 +1,6 @@
 use std::io;
 
+use log::{Log, LogLevel};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
@@ -14,6 +15,7 @@ use ratatui::{
 };
 
 mod app;
+mod log;
 mod ui;
 use crate::{
     app::{App, CurrentScreen},
@@ -26,7 +28,7 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
             app.search_text_field.delete_word_backward();
         }
         (KeyCode::Char('u'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::META) => {
-            app.search_text_field.clear_search_text();
+            app.search_text_field.clear();
         }
         (KeyCode::Backspace, _) => {
             app.search_text_field.delete_char();
@@ -64,6 +66,8 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
         }
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
+            app.update_search_results()
+                .expect("Failed to unwrap search results"); // TODO: make this async
         }
         (KeyCode::Char(value), _) => {
             app.search_text_field.enter_char(value);
@@ -77,8 +81,11 @@ fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {}
 fn handle_key_results(app: &mut App, key: &KeyEvent) {}
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()> {
+    let mut logger = Log::new(LogLevel::Info);
+
     loop {
         terminal.draw(|f| ui(f, app))?;
+        logger.info("Redraw performed");
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Release {

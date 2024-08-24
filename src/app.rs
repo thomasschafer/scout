@@ -1,16 +1,10 @@
-pub struct App {
-    pub current_screen: CurrentScreen,
-    pub search_text_field: SearchTextField,
-}
+use std::{
+    fs,
+    io::{self, BufRead},
+};
 
-impl App {
-    pub fn new() -> App {
-        App {
-            current_screen: CurrentScreen::Searching,
-            search_text_field: SearchTextField::default(),
-        }
-    }
-}
+use ignore::WalkBuilder;
+use regex::Regex;
 
 pub enum CurrentScreen {
     Searching,
@@ -63,6 +57,10 @@ impl SearchTextField {
         let index = self.byte_index();
         self.text.insert(index, new_char);
         self.move_cursor_right();
+    }
+
+    fn set(&mut self, text: String) {
+        self.text = text;
     }
 
     fn byte_index(&mut self) -> usize {
@@ -149,8 +147,68 @@ impl SearchTextField {
         new_cursor_pos.clamp(0, self.text.chars().count())
     }
 
-    pub fn clear_search_text(&mut self) {
+    pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_idx = 0;
+    }
+}
+
+struct SearchResult {
+    path: String,
+    line_number: usize,
+    line: String,
+}
+
+enum SearchResults {
+    Loading,
+    Complete(Vec<SearchResult>),
+}
+
+pub struct App {
+    pub current_screen: CurrentScreen,
+    pub search_text_field: SearchTextField,
+    pub search_results: SearchResults,
+}
+
+impl App {
+    pub fn new() -> App {
+        App {
+            current_screen: CurrentScreen::Searching,
+            search_text_field: SearchTextField::default(),
+            search_results: SearchResults::Loading,
+        }
+    }
+
+    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
+        let repo_path = ".";
+        let pattern = Regex::new(self.search_text_field.text())?;
+
+        let mut results = vec![];
+
+        let walker = WalkBuilder::new(repo_path).ignore(true).build();
+
+        for entry in walker.flatten() {
+            if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                let path = entry.path();
+
+                let file = fs::File::open(path)?;
+                let reader = io::BufReader::new(file);
+
+                for (line_number, line) in reader.lines().enumerate() {
+                    let line = line?;
+                    if pattern.is_match(&line) {
+                        results.push(SearchResult {
+                            path: entry.path().display().to_string(),
+                            line,
+                            line_number,
+                        });
+                    }
+                }
+            }
+        }
+
+        self.search_results = SearchResults::Complete(results);
+
+        Ok(())
     }
 }

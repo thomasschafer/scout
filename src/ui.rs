@@ -28,6 +28,7 @@ fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
 }
 
 fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
+    // TODO: update this with search results
     let block = Block::bordered()
         .border_style(Style::new())
         .title("Text searched for:");
