@@ -66,8 +66,9 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
         }
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
+            // TODO: handle the error here, e.g. from regex parse errors
             app.update_search_results()
-                .expect("Failed to unwrap search results"); // TODO: make this async
+                .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }
         (KeyCode::Char(value), _) => {
             app.search_text_field.enter_char(value);
@@ -76,7 +77,22 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
     }
 }
 
-fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {}
+fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('j') | KeyCode::Down, _) => {
+            app.search_results.complete_mut().move_selected_down();
+        }
+        (KeyCode::Char('k') | KeyCode::Up, _) => {
+            app.search_results.complete_mut().move_selected_up();
+        }
+        (KeyCode::Char(' '), _) => {
+            app.search_results
+                .complete_mut()
+                .toggle_selected_inclusion();
+        }
+        _ => {}
+    }
+}
 
 fn handle_key_results(app: &mut App, key: &KeyEvent) {}
 

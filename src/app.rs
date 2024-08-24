@@ -59,10 +59,6 @@ impl SearchTextField {
         self.move_cursor_right();
     }
 
-    fn set(&mut self, text: String) {
-        self.text = text;
-    }
-
     fn byte_index(&mut self) -> usize {
         self.text
             .char_indices()
@@ -153,15 +149,69 @@ impl SearchTextField {
     }
 }
 
-struct SearchResult {
-    path: String,
-    line_number: usize,
-    line: String,
+#[derive(Clone)]
+pub struct SearchResult {
+    pub path: String,
+    pub line_number: usize,
+    pub line: String,
+    pub included: bool,
 }
 
-enum SearchResults {
+pub struct CompleteState {
+    pub results: Vec<SearchResult>,
+    pub selected: usize,
+}
+
+impl CompleteState {
+    pub fn move_selected_up(&mut self) {
+        if self.selected == 0 {
+            self.selected = self.results.len();
+        }
+        self.selected = self.selected.saturating_sub(1);
+    }
+
+    pub fn move_selected_down(&mut self) {
+        if self.selected >= self.results.len().saturating_sub(1) {
+            self.selected = 0;
+        } else {
+            self.selected += 1;
+        }
+    }
+
+    pub fn toggle_selected_inclusion(&mut self) {
+        if self.selected < self.results.len() {
+            let selected_result = &mut self.results[self.selected];
+            selected_result.included = !selected_result.included;
+        } else {
+            self.selected = self.results.len()
+        }
+    }
+}
+
+pub enum SearchResults {
     Loading,
-    Complete(Vec<SearchResult>),
+    Complete(CompleteState),
+}
+
+macro_rules! complete_impl {
+    ($self:ident, $ret:ty) => {
+        match $self {
+            SearchResults::Complete(state) => state,
+            SearchResults::Loading => {
+                panic!("Search results still loading, expected this to have completed")
+            }
+        }
+    };
+}
+
+impl SearchResults {
+    pub fn complete(&self) -> &CompleteState {
+        complete_impl!(self, &CompleteState)
+    }
+
+    pub fn complete_mut(&mut self) -> &mut CompleteState {
+        complete_impl!(self, &mut CompleteState)
+    }
 }
 
 pub struct App {
@@ -201,13 +251,19 @@ impl App {
                             path: entry.path().display().to_string(),
                             line,
                             line_number,
+                            included: true,
                         });
                     }
                 }
             }
         }
 
-        self.search_results = SearchResults::Complete(results);
+        // thread::sleep(time::Duration::from_secs(2)); // TODO: use this to verify loading state
+
+        self.search_results = SearchResults::Complete(CompleteState {
+            results,
+            selected: 0,
+        });
 
         Ok(())
     }

@@ -1,12 +1,14 @@
+use std::cmp::min;
+
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Paragraph},
+    widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
 
-use crate::app::{App, CurrentScreen};
+use crate::app::{App, CurrentScreen, SearchResult};
 
 fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
     let block = Block::bordered()
@@ -28,19 +30,52 @@ fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
 }
 
 fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
-    // TODO: update this with search results
     let block = Block::bordered()
         .border_style(Style::new())
         .title("Text searched for:");
-    let search_input = Paragraph::new(app.search_text_field.text());
-    let area = flex_area(
-        rect,
-        Constraint::Percentage(80),
-        Constraint::Length(3),
-        Flex::Start,
-    );
+    let search_input = Paragraph::new(app.search_text_field.text()).block(block);
 
-    frame.render_widget(search_input.block(block), area);
+    let [area] = Layout::horizontal([Constraint::Percentage(80)])
+        .flex(Flex::Center)
+        .areas(rect);
+    let [search_input_area, list_area] =
+        Layout::vertical([Constraint::Length(3), Constraint::Fill(1)])
+            .flex(Flex::Start)
+            .areas(area);
+    frame.render_widget(search_input, search_input_area);
+
+    let complete_state = app.search_results.complete();
+    let results_iter = complete_state.results.iter().enumerate();
+
+    let list_area_height = list_area.height as usize;
+    let midpoint = list_area_height / 2;
+    let num_results = complete_state.results.len();
+
+    let results_iter: Box<dyn Iterator<Item = (usize, &SearchResult)>> =
+        if complete_state.selected > midpoint {
+            Box::new(results_iter.skip(min(
+                complete_state.selected - midpoint,
+                num_results.saturating_sub(list_area_height),
+            )))
+        } else {
+            Box::new(results_iter)
+        };
+
+    let search_results = results_iter.map(|(idx, result)| {
+        let mut style = Style::default();
+        if result.included {
+            style = style.fg(Color::Green);
+        }
+        if complete_state.selected == idx {
+            style = style.bg(Color::LightBlue);
+        }
+        ListItem::new(Line::from(Span::styled(
+            format!("{}:{} - {}", result.path, result.line_number, result.line),
+            style,
+        )))
+    });
+
+    frame.render_widget(List::new(search_results), list_area);
 }
 
 pub fn ui(frame: &mut Frame, app: &App) {
