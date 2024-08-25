@@ -1,37 +1,39 @@
 use std::{
+    cell::RefCell,
     fs,
     io::{self, BufRead},
+    rc::Rc,
 };
 
 use ignore::WalkBuilder;
 use regex::Regex;
 
-pub enum CurrentScreen {
+pub(crate) enum CurrentScreen {
     Searching,
     Confirmation,
     Results,
 }
 
-#[derive(Default)]
-pub struct SearchTextField {
+#[derive(Default, Clone)]
+pub(crate) struct TextField {
     text: String,
     cursor_idx: usize,
 }
 
-impl SearchTextField {
-    pub fn text(&self) -> &str {
+impl TextField {
+    pub(crate) fn text(&self) -> &str {
         self.text.as_str()
     }
 
-    pub fn cursor_idx(&self) -> usize {
+    pub(crate) fn cursor_idx(&self) -> usize {
         self.cursor_idx
     }
 
-    pub fn move_cursor_left(&mut self) {
+    pub(crate) fn move_cursor_left(&mut self) {
         self.move_cursor_left_by(1)
     }
 
-    pub fn move_cursor_start(&mut self) {
+    pub(crate) fn move_cursor_start(&mut self) {
         self.cursor_idx = 0;
     }
 
@@ -40,7 +42,7 @@ impl SearchTextField {
         self.cursor_idx = self.clamp_cursor(cursor_moved_left);
     }
 
-    pub fn move_cursor_right(&mut self) {
+    pub(crate) fn move_cursor_right(&mut self) {
         self.move_cursor_right_by(1)
     }
 
@@ -49,11 +51,11 @@ impl SearchTextField {
         self.cursor_idx = self.clamp_cursor(cursor_moved_right);
     }
 
-    pub fn move_cursor_end(&mut self) {
+    pub(crate) fn move_cursor_end(&mut self) {
         self.cursor_idx = self.text.chars().count();
     }
 
-    pub fn enter_char(&mut self, new_char: char) {
+    pub(crate) fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.text.insert(index, new_char);
         self.move_cursor_right();
@@ -67,7 +69,7 @@ impl SearchTextField {
             .unwrap_or(self.text.len())
     }
 
-    pub fn delete_char(&mut self) {
+    pub(crate) fn delete_char(&mut self) {
         if self.cursor_idx == 0 {
             return;
         }
@@ -79,7 +81,7 @@ impl SearchTextField {
         self.move_cursor_left();
     }
 
-    pub fn delete_char_forward(&mut self) {
+    pub(crate) fn delete_char_forward(&mut self) {
         let before_char = self.text.chars().take(self.cursor_idx);
         let after_char = self.text.chars().skip(self.cursor_idx + 1);
 
@@ -102,11 +104,11 @@ impl SearchTextField {
         idx
     }
 
-    pub fn move_cursor_back_word(&mut self) {
+    pub(crate) fn move_cursor_back_word(&mut self) {
         self.cursor_idx = self.previous_word_start();
     }
 
-    pub fn delete_word_backward(&mut self) {
+    pub(crate) fn delete_word_backward(&mut self) {
         let new_cursor_pos = self.previous_word_start();
         let before_char = self.text.chars().take(new_cursor_pos);
         let after_char = self.text.chars().skip(self.cursor_idx);
@@ -128,11 +130,11 @@ impl SearchTextField {
         self.cursor_idx + idx
     }
 
-    pub fn move_cursor_forward_word(&mut self) {
+    pub(crate) fn move_cursor_forward_word(&mut self) {
         self.cursor_idx = self.next_word_start();
     }
 
-    pub fn delete_word_forward(&mut self) {
+    pub(crate) fn delete_word_forward(&mut self) {
         let before_char = self.text.chars().take(self.cursor_idx);
         let after_char = self.text.chars().skip(self.next_word_start());
 
@@ -143,34 +145,34 @@ impl SearchTextField {
         new_cursor_pos.clamp(0, self.text.chars().count())
     }
 
-    pub fn clear(&mut self) {
+    pub(crate) fn clear(&mut self) {
         self.text.clear();
         self.cursor_idx = 0;
     }
 }
 
 #[derive(Clone)]
-pub struct SearchResult {
-    pub path: String,
-    pub line_number: usize,
-    pub line: String,
-    pub included: bool,
+pub(crate) struct SearchResult {
+    pub(crate) path: String,
+    pub(crate) line_number: usize,
+    pub(crate) line: String,
+    pub(crate) included: bool,
 }
 
-pub struct CompleteState {
-    pub results: Vec<SearchResult>,
-    pub selected: usize,
+pub(crate) struct CompleteState {
+    pub(crate) results: Vec<SearchResult>,
+    pub(crate) selected: usize,
 }
 
 impl CompleteState {
-    pub fn move_selected_up(&mut self) {
+    pub(crate) fn move_selected_up(&mut self) {
         if self.selected == 0 {
             self.selected = self.results.len();
         }
         self.selected = self.selected.saturating_sub(1);
     }
 
-    pub fn move_selected_down(&mut self) {
+    pub(crate) fn move_selected_down(&mut self) {
         if self.selected >= self.results.len().saturating_sub(1) {
             self.selected = 0;
         } else {
@@ -178,7 +180,7 @@ impl CompleteState {
         }
     }
 
-    pub fn toggle_selected_inclusion(&mut self) {
+    pub(crate) fn toggle_selected_inclusion(&mut self) {
         if self.selected < self.results.len() {
             let selected_result = &mut self.results[self.selected];
             selected_result.included = !selected_result.included;
@@ -188,7 +190,7 @@ impl CompleteState {
     }
 }
 
-pub enum SearchResults {
+pub(crate) enum SearchResults {
     Loading,
     Complete(CompleteState),
 }
@@ -205,33 +207,82 @@ macro_rules! complete_impl {
 }
 
 impl SearchResults {
-    pub fn complete(&self) -> &CompleteState {
+    pub(crate) fn complete(&self) -> &CompleteState {
         complete_impl!(self, &CompleteState)
     }
 
-    pub fn complete_mut(&mut self) -> &mut CompleteState {
+    pub(crate) fn complete_mut(&mut self) -> &mut CompleteState {
         complete_impl!(self, &mut CompleteState)
     }
 }
 
-pub struct App {
-    pub current_screen: CurrentScreen,
-    pub search_text_field: SearchTextField,
-    pub search_results: SearchResults,
+#[derive(PartialEq)]
+pub(crate) enum FieldName {
+    Search,
+    Replace,
+}
+
+pub(crate) struct SearchFields {
+    pub(crate) fields: Vec<(FieldName, Rc<RefCell<TextField>>)>,
+    pub(crate) highlighted: usize,
+}
+
+impl SearchFields {
+    pub(crate) fn find(&self, field_name: FieldName) -> Rc<RefCell<TextField>> {
+        self.fields
+            .iter()
+            .find(|field| field.0 == field_name)
+            .expect("Couldn't find search field")
+            .1
+            .clone()
+    }
+
+    pub(crate) fn search(&self) -> Rc<RefCell<TextField>> {
+        self.find(FieldName::Search)
+    }
+
+    pub(crate) fn replace(&self) -> Rc<RefCell<TextField>> {
+        self.find(FieldName::Replace)
+    }
+
+    pub(crate) fn focus_next(&mut self) {
+        self.highlighted = (self.highlighted + 1) % self.fields.len();
+    }
+
+    pub(crate) fn focus_prev(&mut self) {
+        self.highlighted =
+            (self.highlighted + self.fields.len().saturating_sub(1)) % self.fields.len();
+    }
+
+    pub(crate) fn highlighted_field(&self) -> &Rc<RefCell<TextField>> {
+        &self.fields[self.highlighted].1
+    }
+}
+
+pub(crate) struct App {
+    pub(crate) current_screen: CurrentScreen,
+    pub(crate) search_fields: SearchFields,
+    pub(crate) search_results: SearchResults,
 }
 
 impl App {
-    pub fn new() -> App {
+    pub(crate) fn new() -> App {
         App {
             current_screen: CurrentScreen::Searching,
-            search_text_field: SearchTextField::default(),
+            search_fields: SearchFields {
+                fields: vec![
+                    (FieldName::Search, Rc::new(TextField::default().into())),
+                    (FieldName::Replace, Rc::new(TextField::default().into())),
+                ],
+                highlighted: 0,
+            },
             search_results: SearchResults::Loading,
         }
     }
 
-    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
+    pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
         let repo_path = ".";
-        let pattern = Regex::new(self.search_text_field.text())?;
+        let pattern = Regex::new(self.search_fields.search().borrow_mut().text())?;
 
         let mut results = vec![];
 

@@ -25,44 +25,77 @@ use crate::{
 fn handle_key_searching(app: &mut App, key: &KeyEvent) {
     match (key.code, key.modifiers) {
         (KeyCode::Char('w'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::ALT) => {
-            app.search_text_field.delete_word_backward();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .delete_word_backward();
         }
         (KeyCode::Char('u'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::META) => {
-            app.search_text_field.clear();
+            app.search_fields.highlighted_field().borrow_mut().clear();
         }
         (KeyCode::Backspace, _) => {
-            app.search_text_field.delete_char();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .delete_char();
         }
         (KeyCode::Left, KeyModifiers::ALT) | (KeyCode::Char('b') | KeyCode::Char('B'), _)
             if key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            app.search_text_field.move_cursor_back_word();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_back_word();
         }
         (KeyCode::Home, _) => {
-            app.search_text_field.move_cursor_start();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_start();
         }
         (KeyCode::Left, _) => {
-            app.search_text_field.move_cursor_left();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_left();
         }
         (KeyCode::Right, KeyModifiers::ALT) | (KeyCode::Char('f') | KeyCode::Char('F'), _)
             if key.modifiers.contains(KeyModifiers::ALT) =>
         {
-            app.search_text_field.move_cursor_forward_word();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_forward_word();
         }
         (KeyCode::Right, KeyModifiers::META) => {
-            app.search_text_field.move_cursor_end();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_end();
         }
         (KeyCode::End, _) => {
-            app.search_text_field.move_cursor_end();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_end();
         }
         (KeyCode::Right, _) => {
-            app.search_text_field.move_cursor_right();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .move_cursor_right();
         }
         (KeyCode::Char('d'), KeyModifiers::ALT) | (KeyCode::Delete, KeyModifiers::ALT) => {
-            app.search_text_field.delete_word_forward();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .delete_word_forward();
         }
         (KeyCode::Delete, _) => {
-            app.search_text_field.delete_char_forward();
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .delete_char_forward();
         }
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
@@ -70,8 +103,17 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
             app.update_search_results()
                 .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }
+        (KeyCode::Tab, KeyModifiers::ALT) => {
+            app.search_fields.focus_prev();
+        }
+        (KeyCode::Tab, _) => {
+            app.search_fields.focus_next();
+        }
         (KeyCode::Char(value), _) => {
-            app.search_text_field.enter_char(value);
+            app.search_fields
+                .highlighted_field()
+                .borrow_mut()
+                .enter_char(value);
         }
         _ => {}
     }

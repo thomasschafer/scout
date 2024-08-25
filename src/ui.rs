@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::{cmp::min, iter};
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
@@ -11,21 +11,44 @@ use ratatui::{
 use crate::app::{App, CurrentScreen, SearchResult};
 
 fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
-    let block = Block::bordered()
-        .border_style(Style::new().green())
-        .title("Enter some text to search:");
-    let search_input = Paragraph::new(app.search_text_field.text());
-    let area = flex_area(
-        rect,
-        Constraint::Percentage(80),
-        Constraint::Length(3),
-        Flex::Center,
-    );
+    // TODO: tidy this up this repetition
+    let search_block = Block::bordered().title("Search text:");
+    let search = app.search_fields.search();
+    let search = search.borrow();
+    let search_input = Paragraph::new(search.text());
 
-    frame.render_widget(search_input.block(block), area);
+    let replace_block = Block::bordered().title("Replacement text:");
+    let replace = app.search_fields.replace();
+    let replace = replace.borrow();
+    let replace_input = Paragraph::new(replace.text());
+
+    let mut fields = vec![(search_block, search_input), (replace_block, replace_input)];
+
+    fields[app.search_fields.highlighted].0 = fields[app.search_fields.highlighted]
+        .0
+        .clone()
+        .border_style(Style::new().green());
+
+    let [area] = Layout::horizontal([Constraint::Percentage(80)])
+        .flex(Flex::Center)
+        .areas(rect);
+    let areas: [Rect; 2] = Layout::vertical(iter::repeat(Constraint::Length(3)).take(fields.len()))
+        .flex(Flex::Center)
+        .areas(area);
+
+    fields
+        .iter()
+        .zip(areas.iter())
+        .for_each(|((block, input), area)| {
+            frame.render_widget(input.clone().block(block.clone()), *area);
+        });
+
+    let highlighted_area = areas[app.search_fields.highlighted];
+    let cursor_idx = app.search_fields.highlighted_field().borrow().cursor_idx();
+
     frame.set_cursor(
-        area.x + app.search_text_field.cursor_idx() as u16 + 1,
-        area.y + 1,
+        highlighted_area.x + cursor_idx as u16 + 1,
+        highlighted_area.y + 1,
     );
 }
 
@@ -33,7 +56,9 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     let block = Block::bordered()
         .border_style(Style::new())
         .title("Text searched for:");
-    let search_input = Paragraph::new(app.search_text_field.text()).block(block);
+    let search = app.search_fields.search();
+    let search = search.borrow();
+    let search_input = Paragraph::new(search.text()).block(block);
 
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
@@ -116,17 +141,4 @@ pub fn ui(frame: &mut Frame, app: &App) {
         .block(Block::default())
         .alignment(Alignment::Center);
     frame.render_widget(footer, chunks[2]);
-}
-
-fn flex_area(
-    area: Rect,
-    horizontal: Constraint,
-    vertical: Constraint,
-    flex_vertical: Flex,
-) -> Rect {
-    let [area] = Layout::horizontal([horizontal])
-        .flex(Flex::Center)
-        .areas(area);
-    let [area] = Layout::vertical([vertical]).flex(flex_vertical).areas(area);
-    area
 }
