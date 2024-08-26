@@ -132,6 +132,10 @@ fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {
                 .complete_mut()
                 .toggle_selected_inclusion();
         }
+        (KeyCode::Enter, _) => {
+            app.current_screen = CurrentScreen::Results;
+            app.perform_replacement(); // TODO: make this async
+        }
         _ => {}
     }
 }

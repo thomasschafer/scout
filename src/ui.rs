@@ -12,7 +12,7 @@ use ratatui::{
 use crate::app::{App, CurrentScreen, SearchResult};
 
 fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
-    // TODO: tidy this up this repetition
+    // TODO: tidy up this repetition
     let search_block = Block::bordered().title("Search text:");
     let search = app.search_fields.search();
     let search = search.borrow();
@@ -88,7 +88,12 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
                 format!(
                     "[{}] {}:{}",
                     if result.included { '*' } else { ' ' },
-                    result.path,
+                    result
+                        .path
+                        .clone()
+                        .into_os_string()
+                        .into_string()
+                        .expect("Failed to display path"),
                     result.line_number
                 ),
                 Style::default().bg(if complete_state.selected == idx {
@@ -99,7 +104,7 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
             ),
             (result.line.to_owned(), Style::default().fg(Color::Red)),
             (
-                result.line_replaced.to_owned(),
+                result.replacement.to_owned(),
                 Style::default().fg(Color::Green),
             ),
             ("".to_owned(), Style::default()),
@@ -108,6 +113,10 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     });
 
     frame.render_widget(List::new(search_results), list_area);
+}
+
+fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
+    frame.render_widget(Span::raw("Done"), rect);
 }
 
 pub fn ui(frame: &mut Frame, app: &App) {
@@ -133,14 +142,23 @@ pub fn ui(frame: &mut Frame, app: &App) {
         CurrentScreen::Confirmation => {
             render_confirmation_view(frame, app, chunks[1]);
         }
-        CurrentScreen::Results => {}
+        CurrentScreen::Results => {
+            render_results_view(frame, app, chunks[1]);
+        }
     }
 
     let current_keys_hint = {
         match app.current_screen {
-            CurrentScreen::Searching => Span::styled("(esc) to quit", Style::default()),
-            CurrentScreen::Confirmation => Span::styled("(esc) to quit", Style::default()),
-            CurrentScreen::Results => Span::styled("(esc) to quit", Style::default()),
+            // TODO: update these
+            CurrentScreen::Searching => Span::styled(
+                "<enter> search / <tab> focus next / <A-tab> focus prev / <esc> quit",
+                Style::default(),
+            ),
+            CurrentScreen::Confirmation => Span::styled(
+                "<space> toggle / <j> down / <k> up / <esc> quit",
+                Style::default(),
+            ),
+            CurrentScreen::Results => Span::styled("<esc> quit", Style::default()),
         }
     };
 

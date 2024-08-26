@@ -1,11 +1,14 @@
 use std::{
     cell::RefCell,
-    fs,
-    io::{self, BufRead},
+    collections::HashMap,
+    fs::{self, File},
+    io::{BufRead, BufReader, BufWriter, Write},
+    path::PathBuf,
     rc::Rc,
 };
 
 use ignore::WalkBuilder;
+use itertools::Itertools;
 use regex::Regex;
 
 use crate::log;
@@ -155,14 +158,15 @@ impl TextField {
 
 #[derive(Clone)]
 pub(crate) struct SearchResult {
-    pub(crate) path: String,
+    pub(crate) path: PathBuf,
     pub(crate) line_number: usize,
     pub(crate) line: String,
-    pub(crate) line_replaced: String,
+    pub(crate) replacement: String,
     pub(crate) included: bool,
 }
 
 pub(crate) struct CompleteState {
+    pattern: Regex,
     pub(crate) results: Vec<SearchResult>,
     pub(crate) selected: usize, // TODO: allow for selection of ranges
 }
@@ -244,6 +248,10 @@ impl SearchFields {
         self.find(FieldName::Search)
     }
 
+    pub(crate) fn pattern(&self) -> anyhow::Result<Regex> {
+        Ok(Regex::new(self.search().borrow_mut().text())?)
+    }
+
     pub(crate) fn replace(&self) -> Rc<RefCell<TextField>> {
         self.find(FieldName::Replace)
     }
@@ -295,24 +303,24 @@ impl App {
             if entry.file_type().map_or(false, |ft| ft.is_file()) {
                 let path = entry.path();
 
-                let file = match fs::File::open(path) {
+                let file = match File::open(path) {
                     Ok(file) => file,
                     Err(err) => {
                         // TODO: log the error here
                         continue;
                     }
                 };
-                let reader = io::BufReader::new(file);
+                let reader = BufReader::new(file);
 
                 for (line_number, line) in reader.lines().enumerate() {
                     match line {
                         Ok(line) => {
                             if pattern.is_match(&line) {
                                 results.push(SearchResult {
-                                    path: entry.path().display().to_string(),
-                                    line_number,
+                                    path: entry.path().to_path_buf(),
+                                    line_number: line_number + 1,
                                     line: line.clone(),
-                                    line_replaced: pattern
+                                    replacement: pattern
                                         .replace_all(
                                             &line,
                                             // TODO: use capture groups from search pattern in replacement
@@ -337,8 +345,56 @@ impl App {
         self.search_results = SearchResults::Complete(CompleteState {
             results,
             selected: 0,
+            pattern,
         });
 
+        Ok(())
+    }
+
+    pub(crate) fn perform_replacement(&self) {
+        for (path, results) in &self
+            .search_results
+            .complete()
+            .results
+            .iter()
+            .filter(|res| res.included)
+            .chunk_by(|res| res.path.clone())
+        {
+            // TODO: show successes and failures (file was updated, error when replacing etc.) in results screen
+            self.replace_in_file(path, results.collect())
+                .expect("Todo - show this error");
+        }
+    }
+
+    fn replace_in_file(
+        &self,
+        file_path: PathBuf,
+        results: Vec<&SearchResult>,
+    ) -> anyhow::Result<()> {
+        let line_map: HashMap<usize, (String, String)> = HashMap::from_iter(
+            results
+                .into_iter()
+                .map(|res| (res.line_number, (res.line.clone(), res.replacement.clone()))),
+        );
+
+        let input = File::open(file_path.clone())?;
+        let buffered = BufReader::new(input);
+
+        let temp_file_path = file_path.with_extension("tmp");
+        let output = File::create(temp_file_path.clone())?;
+        let mut writer = BufWriter::new(output);
+
+        for (index, line) in buffered.lines().enumerate() {
+            let mut line = line?;
+            if let Some((cur_line, replacement)) = line_map.get(&(index + 1)) {
+                // TODO: check that the lines match
+                line.clone_from(replacement);
+            }
+            writeln!(writer, "{}", line)?;
+        }
+
+        writer.flush()?;
+        fs::rename(temp_file_path, file_path)?;
         Ok(())
     }
 }

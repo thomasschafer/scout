@@ -422,6 +422,7 @@ dependencies = [
  "anyhow",
  "etcetera",
  "ignore",
+ "itertools",
  "ratatui",
  "regex",
  "serde",
