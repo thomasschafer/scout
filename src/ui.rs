@@ -1,8 +1,9 @@
 use std::{cmp::min, iter};
 
 use ratatui::{
+    crossterm::event::KeyModifiers,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Modifier, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
@@ -70,34 +71,40 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     frame.render_widget(search_input, search_input_area);
 
     let complete_state = app.search_results.complete();
-    let results_iter = complete_state.results.iter().enumerate();
 
     let list_area_height = list_area.height as usize;
-    let midpoint = list_area_height / 2;
+    let item_height = 4; // TODO: find a better way of doing this
+    let midpoint = list_area_height / (2 * item_height);
     let num_results = complete_state.results.len();
 
-    let results_iter: Box<dyn Iterator<Item = (usize, &SearchResult)>> =
-        if complete_state.selected > midpoint {
-            Box::new(results_iter.skip(min(
-                complete_state.selected - midpoint,
-                num_results.saturating_sub(list_area_height),
-            )))
-        } else {
-            Box::new(results_iter)
-        };
+    let results_iter = complete_state.results.iter().enumerate().skip(min(
+        complete_state.selected.saturating_sub(midpoint),
+        num_results.saturating_sub(list_area_height / item_height),
+    ));
 
-    let search_results = results_iter.map(|(idx, result)| {
-        let mut style = Style::default();
-        if result.included {
-            style = style.fg(Color::Green);
-        }
-        if complete_state.selected == idx {
-            style = style.bg(Color::LightBlue);
-        }
-        ListItem::new(Line::from(Span::styled(
-            format!("{}:{} - {}", result.path, result.line_number, result.line),
-            style,
-        )))
+    let search_results = results_iter.flat_map(|(idx, result)| {
+        [
+            (
+                format!(
+                    "[{}] {}:{}",
+                    if result.included { '*' } else { ' ' },
+                    result.path,
+                    result.line_number
+                ),
+                Style::default().bg(if complete_state.selected == idx {
+                    Color::LightBlue
+                } else {
+                    Color::Reset
+                }),
+            ),
+            (result.line.to_owned(), Style::default().fg(Color::Red)),
+            (
+                result.line_replaced.to_owned(),
+                Style::default().fg(Color::Green),
+            ),
+            ("".to_owned(), Style::default()),
+        ]
+        .map(|(s, style)| ListItem::new(Text::styled(s, style)))
     });
 
     frame.render_widget(List::new(search_results), list_area);

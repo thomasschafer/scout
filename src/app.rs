@@ -8,6 +8,8 @@ use std::{
 use ignore::WalkBuilder;
 use regex::Regex;
 
+use crate::log;
+
 pub(crate) enum CurrentScreen {
     Searching,
     Confirmation,
@@ -156,12 +158,13 @@ pub(crate) struct SearchResult {
     pub(crate) path: String,
     pub(crate) line_number: usize,
     pub(crate) line: String,
+    pub(crate) line_replaced: String,
     pub(crate) included: bool,
 }
 
 pub(crate) struct CompleteState {
     pub(crate) results: Vec<SearchResult>,
-    pub(crate) selected: usize,
+    pub(crate) selected: usize, // TODO: allow for selection of ranges
 }
 
 impl CompleteState {
@@ -292,18 +295,38 @@ impl App {
             if entry.file_type().map_or(false, |ft| ft.is_file()) {
                 let path = entry.path();
 
-                let file = fs::File::open(path)?;
+                let file = match fs::File::open(path) {
+                    Ok(file) => file,
+                    Err(err) => {
+                        // TODO: log the error here
+                        continue;
+                    }
+                };
                 let reader = io::BufReader::new(file);
 
                 for (line_number, line) in reader.lines().enumerate() {
-                    let line = line?;
-                    if pattern.is_match(&line) {
-                        results.push(SearchResult {
-                            path: entry.path().display().to_string(),
-                            line,
-                            line_number,
-                            included: true,
-                        });
+                    match line {
+                        Ok(line) => {
+                            if pattern.is_match(&line) {
+                                results.push(SearchResult {
+                                    path: entry.path().display().to_string(),
+                                    line_number,
+                                    line: line.clone(),
+                                    line_replaced: pattern
+                                        .replace_all(
+                                            &line,
+                                            // TODO: use capture groups from search pattern in replacement
+                                            self.search_fields.replace().borrow().text(),
+                                        )
+                                        .to_string(),
+                                    included: true,
+                                });
+                            }
+                        }
+                        Err(err) => {
+                            // TODO: log the error here
+                            continue;
+                        }
                     }
                 }
             }
