@@ -151,7 +151,7 @@ pub fn ui(frame: &mut Frame, app: &App) {
         match app.current_screen {
             // TODO: update these
             CurrentScreen::Searching => Span::styled(
-                "<enter> search / <tab> focus next / <A-tab> focus prev / <esc> quit",
+                "<enter> search / <tab> focus next / <S-tab> focus prev / <esc> quit",
                 Style::default(),
             ),
             CurrentScreen::Confirmation => Span::styled(

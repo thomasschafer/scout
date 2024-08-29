@@ -103,7 +103,7 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
             app.update_search_results()
                 .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }
-        (KeyCode::Tab, KeyModifiers::ALT) => {
+        (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
             app.search_fields.focus_prev();
         }
         (KeyCode::Tab, _) => {
