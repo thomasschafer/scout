@@ -1,15 +1,14 @@
 use std::{cmp::min, iter};
 
 use ratatui::{
-    crossterm::event::KeyModifiers,
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Modifier, Style, Stylize},
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
 
-use crate::app::{App, CurrentScreen, SearchResult};
+use crate::app::{App, CurrentScreen, ReplaceResult, SearchResult};
 
 fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
     // TODO: tidy up this repetition
@@ -54,21 +53,32 @@ fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
 }
 
 fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
-    let block = Block::bordered()
+    let search_block = Block::bordered()
         .border_style(Style::new())
-        .title("Text searched for:");
+        .title("Search text:");
     let search = app.search_fields.search();
     let search = search.borrow();
-    let search_input = Paragraph::new(search.text()).block(block);
+    let search_input = Paragraph::new(search.text()).block(search_block);
+
+    let replace_block = Block::bordered()
+        .border_style(Style::new())
+        .title("Replacement text:");
+    let replace = app.search_fields.replace();
+    let replace = replace.borrow();
+    let replace_input = Paragraph::new(replace.text()).block(replace_block);
 
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let [search_input_area, list_area] =
-        Layout::vertical([Constraint::Length(3), Constraint::Fill(1)])
-            .flex(Flex::Start)
-            .areas(area);
+    let [search_input_area, replace_input_area, list_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Fill(1),
+    ])
+    .flex(Flex::Start)
+    .areas(area);
     frame.render_widget(search_input, search_input_area);
+    frame.render_widget(replace_input, replace_input_area);
 
     let complete_state = app.search_results.complete();
 
@@ -116,7 +126,82 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
 }
 
 fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
-    frame.render_widget(Span::raw("Done"), rect);
+    let [area] = Layout::horizontal([Constraint::Percentage(80)])
+        .flex(Flex::Center)
+        .areas(rect);
+    let [success_area, ignored_area, errors_area, list_title_area, list_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(1),
+        Constraint::Fill(1),
+    ])
+    .flex(Flex::Start)
+    .areas(area);
+
+    // TODO: add tests for this
+    let mut num_successes = 0;
+    let mut num_ignored = 0;
+    let mut errors = vec![]; // TODO: make this scrollable
+
+    app.search_results
+        .complete()
+        .results
+        .iter()
+        .for_each(|res| match (res.included, &res.replace_result) {
+            (false, _) => {
+                num_ignored += 1;
+            }
+            (_, Some(ReplaceResult::Success)) => {
+                num_successes += 1;
+            }
+            (_, None) => {
+                errors.push(error_result(res, "Failed to find search result in file"));
+            }
+            (_, Some(ReplaceResult::Error(error))) => {
+                errors.push(error_result(res, error));
+            }
+        });
+
+    [
+        (num_successes, "Successful replacements:", success_area),
+        (num_ignored, "Ignored:", ignored_area),
+        (errors.len(), "Errors:", errors_area),
+    ]
+    .iter()
+    .for_each(|(num, title, area)| {
+        frame.render_widget(
+            Paragraph::new(num.to_string())
+                .block(Block::bordered().border_style(Style::new()).title(*title)),
+            *area,
+        );
+    });
+
+    if !errors.is_empty() {
+        frame.render_widget(Text::raw("Errors:"), list_title_area);
+        frame.render_widget(List::new(errors.into_iter().flatten()), list_area);
+    };
+}
+
+fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListItem<'static>; 3] {
+    [
+        ("".to_owned(), Style::default()),
+        (
+            format!(
+                "{}:{}",
+                result
+                    .path
+                    .clone()
+                    .into_os_string()
+                    .into_string()
+                    .expect("Failed to display path"),
+                result.line_number
+            ),
+            Style::default(),
+        ),
+        (error.to_owned(), Style::default().fg(Color::Red)),
+    ]
+    .map(|(s, style)| ListItem::new(Text::styled(s, style)))
 }
 
 pub fn ui(frame: &mut Frame, app: &App) {

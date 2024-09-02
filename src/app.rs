@@ -156,13 +156,20 @@ impl TextField {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub(crate) enum ReplaceResult {
+    Success,
+    Error(String),
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct SearchResult {
     pub(crate) path: PathBuf,
     pub(crate) line_number: usize,
     pub(crate) line: String,
     pub(crate) replacement: String,
     pub(crate) included: bool,
+    pub(crate) replace_result: Option<ReplaceResult>,
 }
 
 pub(crate) struct CompleteState {
@@ -292,6 +299,7 @@ impl App {
     }
 
     pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
+        // TODO: get path from CLI arg
         let repo_path = ".";
         let pattern = Regex::new(self.search_fields.search().borrow_mut().text())?;
 
@@ -328,6 +336,7 @@ impl App {
                                         )
                                         .to_string(),
                                     included: true,
+                                    replace_result: None,
                                 });
                             }
                         }
@@ -351,31 +360,23 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn perform_replacement(&self) {
+    pub(crate) fn perform_replacement(&mut self) {
         for (path, results) in &self
             .search_results
-            .complete()
+            .complete_mut()
             .results
-            .iter()
+            .iter_mut()
             .filter(|res| res.included)
             .chunk_by(|res| res.path.clone())
         {
             // TODO: show successes and failures (file was updated, error when replacing etc.) in results screen
-            self.replace_in_file(path, results.collect())
-                .expect("Todo - show this error");
+            Self::replace_in_file(path, results.collect()).expect("Todo - show this error");
         }
     }
 
-    fn replace_in_file(
-        &self,
-        file_path: PathBuf,
-        results: Vec<&SearchResult>,
-    ) -> anyhow::Result<()> {
-        let line_map: HashMap<usize, (String, String)> = HashMap::from_iter(
-            results
-                .into_iter()
-                .map(|res| (res.line_number, (res.line.clone(), res.replacement.clone()))),
-        );
+    fn replace_in_file(file_path: PathBuf, results: Vec<&mut SearchResult>) -> anyhow::Result<()> {
+        let mut line_map: HashMap<usize, &mut SearchResult> =
+            HashMap::from_iter(results.into_iter().map(|res| (res.line_number, res)));
 
         let input = File::open(file_path.clone())?;
         let buffered = BufReader::new(input);
@@ -386,9 +387,15 @@ impl App {
 
         for (index, line) in buffered.lines().enumerate() {
             let mut line = line?;
-            if let Some((cur_line, replacement)) = line_map.get(&(index + 1)) {
-                // TODO: check that the lines match
-                line.clone_from(replacement);
+            if let Some(res) = line_map.get_mut(&(index + 1)) {
+                if line == res.line {
+                    line.clone_from(&res.replacement);
+                    res.replace_result = Some(ReplaceResult::Success);
+                } else {
+                    res.replace_result = Some(ReplaceResult::Error(
+                        "File changed since last search".to_owned(),
+                    ));
+                }
             }
             writeln!(writer, "{}", line)?;
         }
