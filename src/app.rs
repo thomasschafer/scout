@@ -11,8 +11,6 @@ use ignore::WalkBuilder;
 use itertools::Itertools;
 use regex::Regex;
 
-use crate::log;
-
 pub(crate) enum CurrentScreen {
     Searching,
     Confirmation,
@@ -172,13 +170,36 @@ pub(crate) struct SearchResult {
     pub(crate) replace_result: Option<ReplaceResult>,
 }
 
-pub(crate) struct CompleteState {
-    pattern: Regex,
+pub(crate) struct ReplaceState {
+    pub(crate) num_successes: usize,
+    pub(crate) num_ignored: usize,
+    pub(crate) errors: Vec<SearchResult>,
+    pub(crate) replacement_errors_pos: usize,
+}
+
+impl ReplaceState {
+    pub(crate) fn scroll_replacement_errors_up(&mut self) {
+        if self.replacement_errors_pos == 0 {
+            self.replacement_errors_pos = self.errors.len();
+        }
+        self.replacement_errors_pos = self.replacement_errors_pos.saturating_sub(1);
+    }
+
+    pub(crate) fn scroll_replacement_errors_down(&mut self) {
+        if self.replacement_errors_pos >= self.errors.len().saturating_sub(1) {
+            self.replacement_errors_pos = 0;
+        } else {
+            self.replacement_errors_pos += 1;
+        }
+    }
+}
+
+pub(crate) struct SearchState {
     pub(crate) results: Vec<SearchResult>,
     pub(crate) selected: usize, // TODO: allow for selection of ranges
 }
 
-impl CompleteState {
+impl SearchState {
     pub(crate) fn move_selected_up(&mut self) {
         if self.selected == 0 {
             self.selected = self.results.len();
@@ -199,34 +220,61 @@ impl CompleteState {
             let selected_result = &mut self.results[self.selected];
             selected_result.included = !selected_result.included;
         } else {
-            self.selected = self.results.len()
+            self.selected = self.results.len().saturating_sub(1);
         }
     }
 }
 
 pub(crate) enum SearchResults {
     Loading,
-    Complete(CompleteState),
+    SearchComplete(SearchState),
+    ReplaceComplete(ReplaceState),
 }
 
-macro_rules! complete_impl {
+// TODO: combine these macros
+macro_rules! search_complete_impl {
     ($self:ident, $ret:ty) => {
         match $self {
-            SearchResults::Complete(state) => state,
+            SearchResults::SearchComplete(state) => state,
             SearchResults::Loading => {
-                panic!("Search results still loading, expected this to have completed")
+                panic!("Expected SearchComplete, found Loading")
+            }
+            SearchResults::ReplaceComplete(_) => {
+                panic!("Expected SearchComplete, found ReplaceComplete")
+            }
+        }
+    };
+}
+
+macro_rules! replace_complete_impl {
+    ($self:ident, $ret:ty) => {
+        match $self {
+            SearchResults::ReplaceComplete(state) => state,
+            SearchResults::Loading => {
+                panic!("Expected ReplaceComplete, found Loading")
+            }
+            SearchResults::SearchComplete(_) => {
+                panic!("Expected ReplaceComplete, found SearchComplete")
             }
         }
     };
 }
 
 impl SearchResults {
-    pub(crate) fn complete(&self) -> &CompleteState {
-        complete_impl!(self, &CompleteState)
+    pub(crate) fn search_complete(&self) -> &SearchState {
+        search_complete_impl!(self, &CompleteState)
     }
 
-    pub(crate) fn complete_mut(&mut self) -> &mut CompleteState {
-        complete_impl!(self, &mut CompleteState)
+    pub(crate) fn search_complete_mut(&mut self) -> &mut SearchState {
+        search_complete_impl!(self, &mut CompleteState)
+    }
+
+    pub(crate) fn replace_complete(&self) -> &ReplaceState {
+        replace_complete_impl!(self, &CompleteState)
+    }
+
+    pub(crate) fn replace_complete_mut(&mut self) -> &mut ReplaceState {
+        replace_complete_impl!(self, &mut CompleteState)
     }
 }
 
@@ -255,10 +303,6 @@ impl SearchFields {
         self.find(FieldName::Search)
     }
 
-    pub(crate) fn pattern(&self) -> anyhow::Result<Regex> {
-        Ok(Regex::new(self.search().borrow_mut().text())?)
-    }
-
     pub(crate) fn replace(&self) -> Rc<RefCell<TextField>> {
         self.find(FieldName::Replace)
     }
@@ -280,7 +324,7 @@ impl SearchFields {
 pub(crate) struct App {
     pub(crate) current_screen: CurrentScreen,
     pub(crate) search_fields: SearchFields,
-    pub(crate) search_results: SearchResults,
+    pub(crate) search_results: SearchResults, // TODO: rename this
 }
 
 impl App {
@@ -351,10 +395,9 @@ impl App {
 
         // thread::sleep(time::Duration::from_secs(2)); // TODO: use this to verify loading state
 
-        self.search_results = SearchResults::Complete(CompleteState {
+        self.search_results = SearchResults::SearchComplete(SearchState {
             results,
             selected: 0,
-            pattern,
         });
 
         Ok(())
@@ -363,7 +406,7 @@ impl App {
     pub(crate) fn perform_replacement(&mut self) {
         for (path, results) in &self
             .search_results
-            .complete_mut()
+            .search_complete_mut()
             .results
             .iter_mut()
             .filter(|res| res.included)
@@ -372,6 +415,42 @@ impl App {
             // TODO: show successes and failures (file was updated, error when replacing etc.) in results screen
             Self::replace_in_file(path, results.collect()).expect("Todo - show this error");
         }
+
+        // TODO (test): add tests for this
+        let mut num_successes = 0;
+        let mut num_ignored = 0;
+        let mut errors = vec![]; // TODO (feat): make this scrollable
+
+        self.search_results
+            .search_complete()
+            .results
+            .iter()
+            .for_each(|res| match (res.included, &res.replace_result) {
+                (false, _) => {
+                    num_ignored += 1;
+                }
+                (_, Some(ReplaceResult::Success)) => {
+                    num_successes += 1;
+                }
+                (_, None) => {
+                    let mut res = res.clone();
+                    res.replace_result = Some(ReplaceResult::Error(
+                        "Failed to find search result in file".to_owned(),
+                    ));
+                    errors.push(res);
+                }
+                (_, Some(ReplaceResult::Error(_))) => {
+                    errors.push(res.clone());
+                }
+            });
+
+        // TODO: we can get rid of the results state now and just keep around the ReplaceResults
+        self.search_results = SearchResults::ReplaceComplete(ReplaceState {
+            num_successes,
+            num_ignored,
+            errors,
+            replacement_errors_pos: 0,
+        });
     }
 
     fn replace_in_file(file_path: PathBuf, results: Vec<&mut SearchResult>) -> anyhow::Result<()> {

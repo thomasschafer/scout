@@ -70,9 +70,10 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let [search_input_area, replace_input_area, list_area] = Layout::vertical([
+    let [search_input_area, replace_input_area, num_results_area, list_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(3),
+        Constraint::Length(2),
         Constraint::Fill(1),
     ])
     .flex(Flex::Start)
@@ -80,12 +81,17 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     frame.render_widget(search_input, search_input_area);
     frame.render_widget(replace_input, replace_input_area);
 
-    let complete_state = app.search_results.complete();
+    let complete_state = app.search_results.search_complete();
 
     let list_area_height = list_area.height as usize;
     let item_height = 4; // TODO: find a better way of doing this
     let midpoint = list_area_height / (2 * item_height);
     let num_results = complete_state.results.len();
+
+    frame.render_widget(
+        Span::raw(format!("Results: {}", num_results)),
+        num_results_area,
+    );
 
     let results_iter = complete_state.results.iter().enumerate().skip(min(
         complete_state.selected.saturating_sub(midpoint),
@@ -139,33 +145,31 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
     .flex(Flex::Start)
     .areas(area);
 
-    // TODO: add tests for this
-    let mut num_successes = 0;
-    let mut num_ignored = 0;
-    let mut errors = vec![]; // TODO: make this scrollable
-
-    app.search_results
-        .complete()
-        .results
+    let replace_results = app.search_results.replace_complete();
+    let errors = replace_results
+        .errors
         .iter()
-        .for_each(|res| match (res.included, &res.replace_result) {
-            (false, _) => {
-                num_ignored += 1;
-            }
-            (_, Some(ReplaceResult::Success)) => {
-                num_successes += 1;
-            }
-            (_, None) => {
-                errors.push(error_result(res, "Failed to find search result in file"));
-            }
-            (_, Some(ReplaceResult::Error(error))) => {
-                errors.push(error_result(res, error));
-            }
-        });
+        .map(|res| {
+            error_result(
+                res,
+                match &res.replace_result {
+                    Some(ReplaceResult::Error(error)) => error,
+                    None => panic!("Found error result with no error message"),
+                    Some(ReplaceResult::Success) => {
+                        panic!("Found successful result in errors: {:?}", res)
+                    }
+                },
+            )
+        })
+        .collect::<Vec<_>>();
 
     [
-        (num_successes, "Successful replacements:", success_area),
-        (num_ignored, "Ignored:", ignored_area),
+        (
+            replace_results.num_successes,
+            "Successful replacements:",
+            success_area,
+        ),
+        (replace_results.num_ignored, "Ignored:", ignored_area),
         (errors.len(), "Errors:", errors_area),
     ]
     .iter()
@@ -179,7 +183,15 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
 
     if !errors.is_empty() {
         frame.render_widget(Text::raw("Errors:"), list_title_area);
-        frame.render_widget(List::new(errors.into_iter().flatten()), list_area);
+        frame.render_widget(
+            List::new(
+                errors
+                    .into_iter()
+                    .skip(app.search_results.replace_complete().replacement_errors_pos)
+                    .flatten(),
+            ),
+            list_area,
+        );
     };
 }
 

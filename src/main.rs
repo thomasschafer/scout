@@ -22,7 +22,7 @@ use crate::{
     ui::ui,
 };
 
-fn handle_key_searching(app: &mut App, key: &KeyEvent) {
+fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
     match (key.code, key.modifiers) {
         (KeyCode::Char('w'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::ALT) => {
             app.search_fields
@@ -116,20 +116,23 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) {
                 .enter_char(value);
         }
         _ => {}
-    }
+    };
+    false
 }
 
-fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {
+fn handle_key_confirmation(app: &mut App, key: &KeyEvent) -> bool {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('j') | KeyCode::Down, _) => {
-            app.search_results.complete_mut().move_selected_down();
+        (KeyCode::Char('j') | KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            app.search_results
+                .search_complete_mut()
+                .move_selected_down();
         }
-        (KeyCode::Char('k') | KeyCode::Up, _) => {
-            app.search_results.complete_mut().move_selected_up();
+        (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+            app.search_results.search_complete_mut().move_selected_up();
         }
         (KeyCode::Char(' '), _) => {
             app.search_results
-                .complete_mut()
+                .search_complete_mut()
                 .toggle_selected_inclusion();
         }
         (KeyCode::Enter, _) => {
@@ -137,10 +140,34 @@ fn handle_key_confirmation(app: &mut App, key: &KeyEvent) {
             app.perform_replacement(); // TODO: make this async
         }
         _ => {}
-    }
+    };
+    false
 }
 
-fn handle_key_results(app: &mut App, key: &KeyEvent) {}
+fn handle_key_results(app: &mut App, key: &KeyEvent) -> bool {
+    let mut exit = false;
+    match (key.code, key.modifiers) {
+        (KeyCode::Char('j') | KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+            app.search_results
+                .replace_complete_mut()
+                .scroll_replacement_errors_down();
+        }
+        (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+            app.search_results
+                .replace_complete_mut()
+                .scroll_replacement_errors_up();
+        }
+        (KeyCode::Char('d'), KeyModifiers::CONTROL) => {} // TODO
+        (KeyCode::PageDown, _) => {}                      // TODO
+        (KeyCode::Char('u'), KeyModifiers::CONTROL) => {} // TODO
+        (KeyCode::PageUp, _) => {}                        // TODO
+        (KeyCode::Enter, _) => {
+            exit = true;
+        }
+        _ => {}
+    };
+    exit
+}
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()> {
     let mut logger = Log::new(LogLevel::Info);
@@ -160,10 +187,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
                 return Ok(());
             }
 
-            match app.current_screen {
+            let exit = match app.current_screen {
                 CurrentScreen::Searching => handle_key_searching(app, &key),
                 CurrentScreen::Confirmation => handle_key_confirmation(app, &key),
                 CurrentScreen::Results => handle_key_results(app, &key),
+            };
+            if exit {
+                return Ok(());
             }
         }
     }
