@@ -1,3 +1,4 @@
+// todo
 use std::{cmp::min, iter};
 
 use ratatui::{
@@ -113,7 +114,11 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
                     result.line_number
                 ),
                 Style::default().bg(if complete_state.selected == idx {
-                    Color::LightBlue
+                    if result.included {
+                        Color::Blue
+                    } else {
+                        Color::Red
+                    }
                 } else {
                     Color::Reset
                 }),
@@ -248,14 +253,14 @@ pub fn ui(frame: &mut Frame, app: &App) {
         match app.current_screen {
             // TODO: update these
             CurrentScreen::Searching => Span::styled(
-                "<enter> search / <tab> focus next / <S-tab> focus prev / <esc> quit",
+                "<enter> search / <tab> focus next / <S-tab> focus prev / <C-r> reset / <esc> quit",
                 Style::default(),
             ),
             CurrentScreen::Confirmation => Span::styled(
-                "<space> toggle / <j> down / <k> up / <esc> quit",
+                "<space> toggle / <j> down / <k> up / <C-r> reset / <esc> quit",
                 Style::default(),
             ),
-            CurrentScreen::Results => Span::styled("<esc> quit", Style::default()),
+            CurrentScreen::Results => Span::styled("<C-r> reset / <esc> quit", Style::default()),
         }
     };
 

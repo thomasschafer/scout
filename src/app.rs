@@ -342,6 +342,10 @@ impl App {
         }
     }
 
+    pub(crate) fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
         // TODO: get path from CLI arg
         let repo_path = ".";
@@ -419,7 +423,7 @@ impl App {
         // TODO (test): add tests for this
         let mut num_successes = 0;
         let mut num_ignored = 0;
-        let mut errors = vec![]; // TODO (feat): make this scrollable
+        let mut errors = vec![];
 
         self.search_results
             .search_complete()

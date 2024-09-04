@@ -181,10 +181,13 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
                 continue;
             }
 
-            if key.code == KeyCode::Esc
-                || key.code == KeyCode::Char('c') && key.modifiers == KeyModifiers::CONTROL
-            {
-                return Ok(());
+            match (key.code, key.modifiers) {
+                (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
+                (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                    app.reset();
+                    continue;
+                }
+                (_, _) => {}
             }
 
             let exit = match app.current_screen {
