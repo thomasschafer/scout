@@ -170,30 +170,6 @@ pub(crate) struct SearchResult {
     pub(crate) replace_result: Option<ReplaceResult>,
 }
 
-pub(crate) struct ReplaceState {
-    pub(crate) num_successes: usize,
-    pub(crate) num_ignored: usize,
-    pub(crate) errors: Vec<SearchResult>,
-    pub(crate) replacement_errors_pos: usize,
-}
-
-impl ReplaceState {
-    pub(crate) fn scroll_replacement_errors_up(&mut self) {
-        if self.replacement_errors_pos == 0 {
-            self.replacement_errors_pos = self.errors.len();
-        }
-        self.replacement_errors_pos = self.replacement_errors_pos.saturating_sub(1);
-    }
-
-    pub(crate) fn scroll_replacement_errors_down(&mut self) {
-        if self.replacement_errors_pos >= self.errors.len().saturating_sub(1) {
-            self.replacement_errors_pos = 0;
-        } else {
-            self.replacement_errors_pos += 1;
-        }
-    }
-}
-
 pub(crate) struct SearchState {
     pub(crate) results: Vec<SearchResult>,
     pub(crate) selected: usize, // TODO: allow for selection of ranges
@@ -221,6 +197,30 @@ impl SearchState {
             selected_result.included = !selected_result.included;
         } else {
             self.selected = self.results.len().saturating_sub(1);
+        }
+    }
+}
+
+pub(crate) struct ReplaceState {
+    pub(crate) num_successes: usize,
+    pub(crate) num_ignored: usize,
+    pub(crate) errors: Vec<SearchResult>,
+    pub(crate) replacement_errors_pos: usize,
+}
+
+impl ReplaceState {
+    pub(crate) fn scroll_replacement_errors_up(&mut self) {
+        if self.replacement_errors_pos == 0 {
+            self.replacement_errors_pos = self.errors.len();
+        }
+        self.replacement_errors_pos = self.replacement_errors_pos.saturating_sub(1);
+    }
+
+    pub(crate) fn scroll_replacement_errors_down(&mut self) {
+        if self.replacement_errors_pos >= self.errors.len().saturating_sub(1) {
+            self.replacement_errors_pos = 0;
+        } else {
+            self.replacement_errors_pos += 1;
         }
     }
 }
@@ -416,8 +416,12 @@ impl App {
             .filter(|res| res.included)
             .chunk_by(|res| res.path.clone())
         {
-            // TODO: show successes and failures (file was updated, error when replacing etc.) in results screen
-            Self::replace_in_file(path, results.collect()).expect("Todo - show this error");
+            let mut results = results.collect::<Vec<_>>();
+            if let Err(file_err) = Self::replace_in_file(path, &mut results) {
+                results.iter_mut().for_each(|res| {
+                    res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
+                });
+            }
         }
 
         // TODO (test): add tests for this
@@ -448,7 +452,6 @@ impl App {
                 }
             });
 
-        // TODO: we can get rid of the results state now and just keep around the ReplaceResults
         self.search_results = SearchResults::ReplaceComplete(ReplaceState {
             num_successes,
             num_ignored,
@@ -457,9 +460,12 @@ impl App {
         });
     }
 
-    fn replace_in_file(file_path: PathBuf, results: Vec<&mut SearchResult>) -> anyhow::Result<()> {
-        let mut line_map: HashMap<usize, &mut SearchResult> =
-            HashMap::from_iter(results.into_iter().map(|res| (res.line_number, res)));
+    fn replace_in_file(
+        file_path: PathBuf,
+        results: &mut [&mut SearchResult],
+    ) -> anyhow::Result<()> {
+        let mut line_map: HashMap<_, _> =
+            HashMap::from_iter(results.iter_mut().map(|res| (res.line_number, res)));
 
         let input = File::open(file_path.clone())?;
         let buffered = BufReader::new(input);
