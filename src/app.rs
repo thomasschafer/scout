@@ -349,7 +349,7 @@ impl App {
     pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
         // TODO: get path from CLI arg
         let repo_path = ".";
-        let pattern = Regex::new(self.search_fields.search().borrow_mut().text())?;
+        let pattern = Regex::new(self.search_fields.search().borrow_mut().text())?; // TODO: handle regex not being parsed
 
         let mut results = vec![];
 
@@ -379,7 +379,6 @@ impl App {
                                     replacement: pattern
                                         .replace_all(
                                             &line,
-                                            // TODO: use capture groups from search pattern in replacement
                                             self.search_fields.replace().borrow().text(),
                                         )
                                         .to_string(),
