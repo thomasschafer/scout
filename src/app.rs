@@ -225,56 +225,49 @@ impl ReplaceState {
     }
 }
 
-pub(crate) enum SearchResults {
+pub(crate) enum Results {
     Loading,
     SearchComplete(SearchState),
     ReplaceComplete(ReplaceState),
 }
 
-// TODO: combine these macros
-macro_rules! search_complete_impl {
-    ($self:ident, $ret:ty) => {
+impl Results {
+    fn name(&self) -> String {
+        match self {
+            Self::Loading => "Loading",
+            Self::SearchComplete(_) => "SearchComplete",
+            Self::ReplaceComplete(_) => "ReplaceComplete",
+        }
+        .to_owned()
+    }
+}
+
+macro_rules! complete_state_impl {
+    ($self:ident, $variant:ident, $state_type:ty) => {
         match $self {
-            SearchResults::SearchComplete(state) => state,
-            SearchResults::Loading => {
-                panic!("Expected SearchComplete, found Loading")
-            }
-            SearchResults::ReplaceComplete(_) => {
-                panic!("Expected SearchComplete, found ReplaceComplete")
+            Results::$variant(state) => state,
+            _ => {
+                panic!("Expected {}, found {}", stringify!($variant), $self.name())
             }
         }
     };
 }
 
-macro_rules! replace_complete_impl {
-    ($self:ident, $ret:ty) => {
-        match $self {
-            SearchResults::ReplaceComplete(state) => state,
-            SearchResults::Loading => {
-                panic!("Expected ReplaceComplete, found Loading")
-            }
-            SearchResults::SearchComplete(_) => {
-                panic!("Expected ReplaceComplete, found SearchComplete")
-            }
-        }
-    };
-}
-
-impl SearchResults {
+impl Results {
     pub(crate) fn search_complete(&self) -> &SearchState {
-        search_complete_impl!(self, &CompleteState)
+        complete_state_impl!(self, SearchComplete, SearchState)
     }
 
     pub(crate) fn search_complete_mut(&mut self) -> &mut SearchState {
-        search_complete_impl!(self, &mut CompleteState)
+        complete_state_impl!(self, SearchComplete, SearchState)
     }
 
     pub(crate) fn replace_complete(&self) -> &ReplaceState {
-        replace_complete_impl!(self, &CompleteState)
+        complete_state_impl!(self, ReplaceComplete, ReplaceState)
     }
 
     pub(crate) fn replace_complete_mut(&mut self) -> &mut ReplaceState {
-        replace_complete_impl!(self, &mut CompleteState)
+        complete_state_impl!(self, ReplaceComplete, ReplaceState)
     }
 }
 
@@ -324,7 +317,7 @@ impl SearchFields {
 pub(crate) struct App {
     pub(crate) current_screen: CurrentScreen,
     pub(crate) search_fields: SearchFields,
-    pub(crate) search_results: SearchResults, // TODO: rename this
+    pub(crate) results: Results,
 }
 
 impl App {
@@ -338,7 +331,7 @@ impl App {
                 ],
                 highlighted: 0,
             },
-            search_results: SearchResults::Loading,
+            results: Results::Loading,
         }
     }
 
@@ -398,7 +391,7 @@ impl App {
 
         // thread::sleep(time::Duration::from_secs(2)); // TODO: use this to verify loading state
 
-        self.search_results = SearchResults::SearchComplete(SearchState {
+        self.results = Results::SearchComplete(SearchState {
             results,
             selected: 0,
         });
@@ -408,7 +401,7 @@ impl App {
 
     pub(crate) fn perform_replacement(&mut self) {
         for (path, results) in &self
-            .search_results
+            .results
             .search_complete_mut()
             .results
             .iter_mut()
@@ -428,7 +421,7 @@ impl App {
         let mut num_ignored = 0;
         let mut errors = vec![];
 
-        self.search_results
+        self.results
             .search_complete()
             .results
             .iter()
@@ -451,7 +444,7 @@ impl App {
                 }
             });
 
-        self.search_results = SearchResults::ReplaceComplete(ReplaceState {
+        self.results = Results::ReplaceComplete(ReplaceState {
             num_successes,
             num_ignored,
             errors,

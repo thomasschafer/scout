@@ -123,15 +123,13 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
 fn handle_key_confirmation(app: &mut App, key: &KeyEvent) -> bool {
     match (key.code, key.modifiers) {
         (KeyCode::Char('j') | KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-            app.search_results
-                .search_complete_mut()
-                .move_selected_down();
+            app.results.search_complete_mut().move_selected_down();
         }
         (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-            app.search_results.search_complete_mut().move_selected_up();
+            app.results.search_complete_mut().move_selected_up();
         }
         (KeyCode::Char(' '), _) => {
-            app.search_results
+            app.results
                 .search_complete_mut()
                 .toggle_selected_inclusion();
         }
@@ -148,12 +146,12 @@ fn handle_key_results(app: &mut App, key: &KeyEvent) -> bool {
     let mut exit = false;
     match (key.code, key.modifiers) {
         (KeyCode::Char('j') | KeyCode::Down, _) | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-            app.search_results
+            app.results
                 .replace_complete_mut()
                 .scroll_replacement_errors_down();
         }
         (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-            app.search_results
+            app.results
                 .replace_complete_mut()
                 .scroll_replacement_errors_up();
         }

@@ -1,4 +1,3 @@
-// todo
 use std::{cmp::min, iter};
 
 use ratatui::{
@@ -82,7 +81,7 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     frame.render_widget(search_input, search_input_area);
     frame.render_widget(replace_input, replace_input_area);
 
-    let complete_state = app.search_results.search_complete();
+    let complete_state = app.results.search_complete();
 
     let list_area_height = list_area.height as usize;
     let item_height = 4; // TODO: find a better way of doing this
@@ -150,7 +149,7 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
     .flex(Flex::Start)
     .areas(area);
 
-    let replace_results = app.search_results.replace_complete();
+    let replace_results = app.results.replace_complete();
     let errors = replace_results
         .errors
         .iter()
@@ -192,7 +191,7 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
             List::new(
                 errors
                     .into_iter()
-                    .skip(app.search_results.replace_complete().replacement_errors_pos)
+                    .skip(app.results.replace_complete().replacement_errors_pos)
                     .flatten(),
             ),
             list_area,
