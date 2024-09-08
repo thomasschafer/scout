@@ -15,6 +15,7 @@ use ratatui::{
 };
 
 mod app;
+mod fields;
 mod log;
 mod ui;
 use crate::{

@@ -2,50 +2,13 @@ use std::{cmp::min, iter};
 
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
-    style::{Color, Style, Stylize},
+    style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
 
-use crate::app::{App, CurrentScreen, Field, FieldName, ReplaceResult, SearchResult};
-
-impl Field {
-    fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
-        let mut block = Block::bordered();
-        if highlighted {
-            block = block.border_style(Style::new().green());
-        }
-
-        match self {
-            Field::Text(f) => {
-                block = block.title(title);
-                frame.render_widget(Paragraph::new(f.text()).block(block), area);
-            }
-            Field::Checkbox(f) => {
-                let chunks = Layout::default()
-                    .direction(Direction::Horizontal)
-                    .constraints([Constraint::Length(5), Constraint::Min(0)])
-                    .split(area);
-                frame.render_widget(
-                    Paragraph::new(if f.checked { " X " } else { "" }).block(block),
-                    chunks[0],
-                );
-                frame.render_widget(
-                    Paragraph::new(Text::styled(
-                        format!("\n {}", title),
-                        if highlighted {
-                            Color::Green
-                        } else {
-                            Color::Reset
-                        },
-                    )),
-                    chunks[1],
-                );
-            }
-        }
-    }
-}
+use crate::app::{App, CurrentScreen, FieldName, ReplaceResult, SearchResult};
 
 impl FieldName {
     pub(crate) fn title(&self) -> &str {
