@@ -24,79 +24,6 @@ use crate::{
 
 fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
     match (key.code, key.modifiers) {
-        (KeyCode::Char('w'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::ALT) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .delete_word_backward();
-        }
-        (KeyCode::Char('u'), KeyModifiers::CONTROL) | (KeyCode::Backspace, KeyModifiers::META) => {
-            app.search_fields.highlighted_field().borrow_mut().clear();
-        }
-        (KeyCode::Backspace, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .delete_char();
-        }
-        (KeyCode::Left, KeyModifiers::ALT) | (KeyCode::Char('b') | KeyCode::Char('B'), _)
-            if key.modifiers.contains(KeyModifiers::ALT) =>
-        {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_back_word();
-        }
-        (KeyCode::Home, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_start();
-        }
-        (KeyCode::Left, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_left();
-        }
-        (KeyCode::Right, KeyModifiers::ALT) | (KeyCode::Char('f') | KeyCode::Char('F'), _)
-            if key.modifiers.contains(KeyModifiers::ALT) =>
-        {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_forward_word();
-        }
-        (KeyCode::Right, KeyModifiers::META) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_end();
-        }
-        (KeyCode::End, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_end();
-        }
-        (KeyCode::Right, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .move_cursor_right();
-        }
-        (KeyCode::Char('d'), KeyModifiers::ALT) | (KeyCode::Delete, KeyModifiers::ALT) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .delete_word_forward();
-        }
-        (KeyCode::Delete, _) => {
-            app.search_fields
-                .highlighted_field()
-                .borrow_mut()
-                .delete_char_forward();
-        }
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
             // TODO: handle the error here, e.g. from regex parse errors
@@ -109,13 +36,12 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
         (KeyCode::Tab, _) => {
             app.search_fields.focus_next();
         }
-        (KeyCode::Char(value), _) => {
+        (code, modifiers) => {
             app.search_fields
                 .highlighted_field()
                 .borrow_mut()
-                .enter_char(value);
+                .handle_keys(code, modifiers);
         }
-        _ => {}
     };
     false
 }

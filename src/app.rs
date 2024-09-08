@@ -1,5 +1,5 @@
 use std::{
-    cell::RefCell,
+    cell::{Ref, RefCell},
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
@@ -9,6 +9,7 @@ use std::{
 
 use ignore::WalkBuilder;
 use itertools::Itertools;
+use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use regex::Regex;
 
 pub(crate) enum CurrentScreen {
@@ -17,15 +18,15 @@ pub(crate) enum CurrentScreen {
     Results,
 }
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub(crate) struct TextField {
     text: String,
     cursor_idx: usize,
 }
 
 impl TextField {
-    pub(crate) fn text(&self) -> &str {
-        self.text.as_str()
+    pub(crate) fn text(&self) -> String {
+        self.text.to_owned()
     }
 
     pub(crate) fn cursor_idx(&self) -> usize {
@@ -152,6 +153,98 @@ impl TextField {
         self.text.clear();
         self.cursor_idx = 0;
     }
+
+    fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        match (code, modifiers) {
+            (KeyCode::Char('w'), KeyModifiers::CONTROL)
+            | (KeyCode::Backspace, KeyModifiers::ALT) => {
+                self.delete_word_backward();
+            }
+            (KeyCode::Char('u'), KeyModifiers::CONTROL)
+            | (KeyCode::Backspace, KeyModifiers::META) => {
+                self.clear();
+            }
+            (KeyCode::Backspace, _) => {
+                self.delete_char();
+            }
+            (KeyCode::Left | KeyCode::Char('b') | KeyCode::Char('B'), _)
+                if modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.move_cursor_back_word();
+            }
+            (KeyCode::Home, _) => {
+                self.move_cursor_start();
+            }
+            (KeyCode::Left, _) => {
+                self.move_cursor_left();
+            }
+            (KeyCode::Right | KeyCode::Char('f') | KeyCode::Char('F'), _)
+                if modifiers.contains(KeyModifiers::ALT) =>
+            {
+                self.move_cursor_forward_word();
+            }
+            (KeyCode::Right, KeyModifiers::META) => {
+                self.move_cursor_end();
+            }
+            (KeyCode::End, _) => {
+                self.move_cursor_end();
+            }
+            (KeyCode::Right, _) => {
+                self.move_cursor_right();
+            }
+            (KeyCode::Char('d'), KeyModifiers::ALT) | (KeyCode::Delete, KeyModifiers::ALT) => {
+                self.delete_word_forward();
+            }
+            (KeyCode::Delete, _) => {
+                self.delete_char_forward();
+            }
+            (KeyCode::Char(value), _) => {
+                self.enter_char(value);
+            }
+            (_, _) => {}
+        }
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct CheckboxField {
+    pub(crate) checked: bool,
+}
+impl CheckboxField {
+    fn handle_keys(&mut self, code: KeyCode, _modifiers: KeyModifiers) {
+        if code == KeyCode::Char(' ') {
+            self.checked = !self.checked;
+        }
+    }
+}
+
+pub(crate) enum Field {
+    Text(TextField),
+    Checkbox(CheckboxField),
+}
+
+impl Field {
+    pub(crate) fn text() -> Field {
+        Field::Text(TextField::default())
+    }
+
+    pub(crate) fn checkbox() -> Field {
+        Field::Checkbox(CheckboxField::default())
+    }
+
+    pub(crate) fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        match self {
+            Field::Text(f) => f.handle_keys(code, modifiers),
+            Field::Checkbox(f) => f.handle_keys(code, modifiers),
+        }
+    }
+
+    pub(crate) fn cursor_idx(&self) -> Option<usize> {
+        match self {
+            Field::Text(f) => Some(f.cursor_idx()),
+            Field::Checkbox(_) => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -243,7 +336,7 @@ impl Results {
 }
 
 macro_rules! complete_state_impl {
-    ($self:ident, $variant:ident, $state_type:ty) => {
+    ($self:ident, $variant:ident) => {
         match $self {
             Results::$variant(state) => state,
             _ => {
@@ -255,19 +348,19 @@ macro_rules! complete_state_impl {
 
 impl Results {
     pub(crate) fn search_complete(&self) -> &SearchState {
-        complete_state_impl!(self, SearchComplete, SearchState)
+        complete_state_impl!(self, SearchComplete)
     }
 
     pub(crate) fn search_complete_mut(&mut self) -> &mut SearchState {
-        complete_state_impl!(self, SearchComplete, SearchState)
+        complete_state_impl!(self, SearchComplete)
     }
 
     pub(crate) fn replace_complete(&self) -> &ReplaceState {
-        complete_state_impl!(self, ReplaceComplete, ReplaceState)
+        complete_state_impl!(self, ReplaceComplete)
     }
 
     pub(crate) fn replace_complete_mut(&mut self) -> &mut ReplaceState {
-        complete_state_impl!(self, ReplaceComplete, ReplaceState)
+        complete_state_impl!(self, ReplaceComplete)
     }
 }
 
@@ -275,30 +368,46 @@ impl Results {
 pub(crate) enum FieldName {
     Search,
     Replace,
+    FixedStrings,
 }
 
+pub(crate) type SearchField = (FieldName, Rc<RefCell<Field>>);
+
 pub(crate) struct SearchFields {
-    pub(crate) fields: Vec<(FieldName, Rc<RefCell<TextField>>)>,
+    pub(crate) fields: Vec<SearchField>,
     pub(crate) highlighted: usize,
 }
 
+macro_rules! define_field_accessor {
+    ($method_name:ident, $field_name:expr, $field_variant:ident, $return_type:ty) => {
+        pub fn $method_name(&self) -> Ref<'_, $return_type> {
+            self.fields
+                .iter()
+                .find(|(name, _)| *name == $field_name)
+                .and_then(|(_, field)| {
+                    Ref::filter_map(field.borrow(), |f| {
+                        if let Field::$field_variant(inner) = f {
+                            Some(inner)
+                        } else {
+                            None
+                        }
+                    })
+                    .ok()
+                })
+                .expect("Couldn't find field")
+        }
+    };
+}
+
 impl SearchFields {
-    pub(crate) fn find(&self, field_name: FieldName) -> Rc<RefCell<TextField>> {
-        self.fields
-            .iter()
-            .find(|field| field.0 == field_name)
-            .expect("Couldn't find search field")
-            .1
-            .clone()
-    }
-
-    pub(crate) fn search(&self) -> Rc<RefCell<TextField>> {
-        self.find(FieldName::Search)
-    }
-
-    pub(crate) fn replace(&self) -> Rc<RefCell<TextField>> {
-        self.find(FieldName::Replace)
-    }
+    define_field_accessor!(search, FieldName::Search, Text, TextField);
+    define_field_accessor!(replace, FieldName::Replace, Text, TextField);
+    define_field_accessor!(
+        fixed_strings,
+        FieldName::FixedStrings,
+        Checkbox,
+        CheckboxField
+    );
 
     pub(crate) fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
@@ -309,9 +418,25 @@ impl SearchFields {
             (self.highlighted + self.fields.len().saturating_sub(1)) % self.fields.len();
     }
 
-    pub(crate) fn highlighted_field(&self) -> &Rc<RefCell<TextField>> {
+    pub(crate) fn highlighted_field(&self) -> &Rc<RefCell<Field>> {
         &self.fields[self.highlighted].1
     }
+
+    pub(crate) fn search_type(&self) -> anyhow::Result<SearchType> {
+        let search = self.search();
+        let search_text = search.text();
+        let result = if self.fixed_strings().checked {
+            SearchType::Fixed(search_text)
+        } else {
+            SearchType::Pattern(Regex::new(&search_text)?)
+        };
+        Ok(result)
+    }
+}
+
+pub(crate) enum SearchType {
+    Pattern(Regex),
+    Fixed(String),
 }
 
 pub(crate) struct App {
@@ -326,8 +451,9 @@ impl App {
             current_screen: CurrentScreen::Searching,
             search_fields: SearchFields {
                 fields: vec![
-                    (FieldName::Search, Rc::new(TextField::default().into())),
-                    (FieldName::Replace, Rc::new(TextField::default().into())),
+                    (FieldName::Search, Rc::new(Field::text().into())),
+                    (FieldName::Replace, Rc::new(Field::text().into())),
+                    (FieldName::FixedStrings, Rc::new(Field::checkbox().into())),
                 ],
                 highlighted: 0,
             },
@@ -342,7 +468,8 @@ impl App {
     pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
         // TODO: get path from CLI arg
         let repo_path = ".";
-        let pattern = Regex::new(self.search_fields.search().borrow_mut().text())?; // TODO: handle regex not being parsed
+
+        let pattern = self.search_fields.search_type()?; // TODO: handle regex not being parsed
 
         let mut results = vec![];
 
@@ -354,7 +481,7 @@ impl App {
 
                 let file = match File::open(path) {
                     Ok(file) => file,
-                    Err(err) => {
+                    Err(_err) => {
                         // TODO: log the error here
                         continue;
                     }
@@ -364,23 +491,44 @@ impl App {
                 for (line_number, line) in reader.lines().enumerate() {
                     match line {
                         Ok(line) => {
-                            if pattern.is_match(&line) {
+                            let maybe_replacement = match pattern {
+                                SearchType::Fixed(ref s) => {
+                                    if line.contains(s) {
+                                        Some(line.replace(
+                                            s,
+                                            self.search_fields.replace().text().as_str(),
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                }
+                                SearchType::Pattern(ref p) => {
+                                    if p.is_match(&line) {
+                                        Some(
+                                            p.replace_all(
+                                                &line,
+                                                self.search_fields.replace().text(),
+                                            )
+                                            .to_string(),
+                                        )
+                                    } else {
+                                        None
+                                    }
+                                }
+                            };
+
+                            if let Some(replacement) = maybe_replacement {
                                 results.push(SearchResult {
                                     path: entry.path().to_path_buf(),
                                     line_number: line_number + 1,
                                     line: line.clone(),
-                                    replacement: pattern
-                                        .replace_all(
-                                            &line,
-                                            self.search_fields.replace().borrow().text(),
-                                        )
-                                        .to_string(),
+                                    replacement,
                                     included: true,
                                     replace_result: None,
                                 });
                             }
                         }
-                        Err(err) => {
+                        Err(_err) => {
                             // TODO: log the error here
                             continue;
                         }

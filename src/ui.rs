@@ -8,78 +8,95 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, CurrentScreen, ReplaceResult, SearchResult};
+use crate::app::{App, CurrentScreen, Field, FieldName, ReplaceResult, SearchResult};
+
+impl Field {
+    fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
+        let mut block = Block::bordered();
+        if highlighted {
+            block = block.border_style(Style::new().green());
+        }
+
+        match self {
+            Field::Text(f) => {
+                block = block.title(title);
+                frame.render_widget(Paragraph::new(f.text()).block(block), area);
+            }
+            Field::Checkbox(f) => {
+                let chunks = Layout::default()
+                    .direction(Direction::Horizontal)
+                    .constraints([Constraint::Length(5), Constraint::Min(0)])
+                    .split(area);
+                frame.render_widget(
+                    Paragraph::new(if f.checked { " X " } else { "" }).block(block),
+                    chunks[0],
+                );
+                frame.render_widget(
+                    Paragraph::new(Text::styled(
+                        format!("\n {}", title),
+                        if highlighted {
+                            Color::Green
+                        } else {
+                            Color::Reset
+                        },
+                    )),
+                    chunks[1],
+                );
+            }
+        }
+    }
+}
+
+impl FieldName {
+    pub(crate) fn title(&self) -> &str {
+        match self {
+            FieldName::Search => "Search text",
+            FieldName::Replace => "Replace text",
+            FieldName::FixedStrings => "Fixed strings",
+        }
+    }
+}
 
 fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
-    // TODO: tidy up this repetition
-    let search_block = Block::bordered().title("Search text:");
-    let search = app.search_fields.search();
-    let search = search.borrow();
-    let search_input = Paragraph::new(search.text());
-
-    let replace_block = Block::bordered().title("Replacement text:");
-    let replace = app.search_fields.replace();
-    let replace = replace.borrow();
-    let replace_input = Paragraph::new(replace.text());
-
-    let mut fields = vec![(search_block, search_input), (replace_block, replace_input)];
-
-    fields[app.search_fields.highlighted].0 = fields[app.search_fields.highlighted]
-        .0
-        .clone()
-        .border_style(Style::new().green());
-
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let areas: [Rect; 2] = Layout::vertical(iter::repeat(Constraint::Length(3)).take(fields.len()))
-        .flex(Flex::Center)
-        .areas(area);
+    let areas: [Rect; 3] =
+        Layout::vertical(iter::repeat(Constraint::Length(3)).take(app.search_fields.fields.len()))
+            .flex(Flex::Center)
+            .areas(area);
 
-    fields
+    app.search_fields
+        .fields
         .iter()
-        .zip(areas.iter())
-        .for_each(|((block, input), area)| {
-            frame.render_widget(input.clone().block(block.clone()), *area);
+        .zip(areas)
+        .enumerate()
+        .for_each(|(idx, ((name, field), field_area))| {
+            field.borrow().render(
+                frame,
+                field_area,
+                name.title().to_owned(),
+                idx == app.search_fields.highlighted,
+            )
         });
 
     let highlighted_area = areas[app.search_fields.highlighted];
-    let cursor_idx = app.search_fields.highlighted_field().borrow().cursor_idx();
-
-    frame.set_cursor(
-        highlighted_area.x + cursor_idx as u16 + 1,
-        highlighted_area.y + 1,
-    );
+    if let Some(cursor_idx) = app.search_fields.highlighted_field().borrow().cursor_idx() {
+        frame.set_cursor(
+            highlighted_area.x + cursor_idx as u16 + 1,
+            highlighted_area.y + 1,
+        )
+    }
 }
 
 fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
-    let search_block = Block::bordered()
-        .border_style(Style::new())
-        .title("Search text:");
-    let search = app.search_fields.search();
-    let search = search.borrow();
-    let search_input = Paragraph::new(search.text()).block(search_block);
-
-    let replace_block = Block::bordered()
-        .border_style(Style::new())
-        .title("Replacement text:");
-    let replace = app.search_fields.replace();
-    let replace = replace.borrow();
-    let replace_input = Paragraph::new(replace.text()).block(replace_block);
-
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let [search_input_area, replace_input_area, num_results_area, list_area] = Layout::vertical([
-        Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(2),
-        Constraint::Fill(1),
-    ])
-    .flex(Flex::Start)
-    .areas(area);
-    frame.render_widget(search_input, search_input_area);
-    frame.render_widget(replace_input, replace_input_area);
+    let [num_results_area, list_area] =
+        Layout::vertical([Constraint::Length(2), Constraint::Fill(1)])
+            .flex(Flex::Start)
+            .areas(area);
 
     let complete_state = app.results.search_complete();
 
@@ -103,7 +120,7 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
             (
                 format!(
                     "[{}] {}:{}",
-                    if result.included { '*' } else { ' ' },
+                    if result.included { 'x' } else { ' ' },
                     result
                         .path
                         .clone()
