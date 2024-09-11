@@ -13,42 +13,42 @@ use regex::Regex;
 
 use crate::fields::{CheckboxField, Field, TextField};
 
-pub(crate) enum CurrentScreen {
+pub enum CurrentScreen {
     Searching,
     Confirmation,
     Results,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) enum ReplaceResult {
+pub enum ReplaceResult {
     Success,
     Error(String),
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct SearchResult {
-    pub(crate) path: PathBuf,
-    pub(crate) line_number: usize,
-    pub(crate) line: String,
-    pub(crate) replacement: String,
-    pub(crate) included: bool,
-    pub(crate) replace_result: Option<ReplaceResult>,
+pub struct SearchResult {
+    pub path: PathBuf,
+    pub line_number: usize,
+    pub line: String,
+    pub replacement: String,
+    pub included: bool,
+    pub replace_result: Option<ReplaceResult>,
 }
 
-pub(crate) struct SearchState {
-    pub(crate) results: Vec<SearchResult>,
-    pub(crate) selected: usize, // TODO: allow for selection of ranges
+pub struct SearchState {
+    pub results: Vec<SearchResult>,
+    pub selected: usize, // TODO: allow for selection of ranges
 }
 
 impl SearchState {
-    pub(crate) fn move_selected_up(&mut self) {
+    pub fn move_selected_up(&mut self) {
         if self.selected == 0 {
             self.selected = self.results.len();
         }
         self.selected = self.selected.saturating_sub(1);
     }
 
-    pub(crate) fn move_selected_down(&mut self) {
+    pub fn move_selected_down(&mut self) {
         if self.selected >= self.results.len().saturating_sub(1) {
             self.selected = 0;
         } else {
@@ -56,7 +56,7 @@ impl SearchState {
         }
     }
 
-    pub(crate) fn toggle_selected_inclusion(&mut self) {
+    pub fn toggle_selected_inclusion(&mut self) {
         if self.selected < self.results.len() {
             let selected_result = &mut self.results[self.selected];
             selected_result.included = !selected_result.included;
@@ -66,22 +66,22 @@ impl SearchState {
     }
 }
 
-pub(crate) struct ReplaceState {
-    pub(crate) num_successes: usize,
-    pub(crate) num_ignored: usize,
-    pub(crate) errors: Vec<SearchResult>,
-    pub(crate) replacement_errors_pos: usize,
+pub struct ReplaceState {
+    pub num_successes: usize,
+    pub num_ignored: usize,
+    pub errors: Vec<SearchResult>,
+    pub replacement_errors_pos: usize,
 }
 
 impl ReplaceState {
-    pub(crate) fn scroll_replacement_errors_up(&mut self) {
+    pub fn scroll_replacement_errors_up(&mut self) {
         if self.replacement_errors_pos == 0 {
             self.replacement_errors_pos = self.errors.len();
         }
         self.replacement_errors_pos = self.replacement_errors_pos.saturating_sub(1);
     }
 
-    pub(crate) fn scroll_replacement_errors_down(&mut self) {
+    pub fn scroll_replacement_errors_down(&mut self) {
         if self.replacement_errors_pos >= self.errors.len().saturating_sub(1) {
             self.replacement_errors_pos = 0;
         } else {
@@ -90,7 +90,7 @@ impl ReplaceState {
     }
 }
 
-pub(crate) enum Results {
+pub enum Results {
     Loading,
     SearchComplete(SearchState),
     ReplaceComplete(ReplaceState),
@@ -119,35 +119,35 @@ macro_rules! complete_state_impl {
 }
 
 impl Results {
-    pub(crate) fn search_complete(&self) -> &SearchState {
+    pub fn search_complete(&self) -> &SearchState {
         complete_state_impl!(self, SearchComplete)
     }
 
-    pub(crate) fn search_complete_mut(&mut self) -> &mut SearchState {
+    pub fn search_complete_mut(&mut self) -> &mut SearchState {
         complete_state_impl!(self, SearchComplete)
     }
 
-    pub(crate) fn replace_complete(&self) -> &ReplaceState {
+    pub fn replace_complete(&self) -> &ReplaceState {
         complete_state_impl!(self, ReplaceComplete)
     }
 
-    pub(crate) fn replace_complete_mut(&mut self) -> &mut ReplaceState {
+    pub fn replace_complete_mut(&mut self) -> &mut ReplaceState {
         complete_state_impl!(self, ReplaceComplete)
     }
 }
 
 #[derive(PartialEq)]
-pub(crate) enum FieldName {
+pub enum FieldName {
     Search,
     Replace,
     FixedStrings,
 }
 
-pub(crate) type SearchField = (FieldName, Rc<RefCell<Field>>);
+pub type SearchField = (FieldName, Rc<RefCell<Field>>);
 
-pub(crate) struct SearchFields {
-    pub(crate) fields: Vec<SearchField>,
-    pub(crate) highlighted: usize,
+pub struct SearchFields {
+    pub fields: Vec<SearchField>,
+    pub highlighted: usize,
 }
 
 macro_rules! define_field_accessor {
@@ -181,20 +181,20 @@ impl SearchFields {
         CheckboxField
     );
 
-    pub(crate) fn focus_next(&mut self) {
+    pub fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
     }
 
-    pub(crate) fn focus_prev(&mut self) {
+    pub fn focus_prev(&mut self) {
         self.highlighted =
             (self.highlighted + self.fields.len().saturating_sub(1)) % self.fields.len();
     }
 
-    pub(crate) fn highlighted_field(&self) -> &Rc<RefCell<Field>> {
+    pub fn highlighted_field(&self) -> &Rc<RefCell<Field>> {
         &self.fields[self.highlighted].1
     }
 
-    pub(crate) fn search_type(&self) -> anyhow::Result<SearchType> {
+    pub fn search_type(&self) -> anyhow::Result<SearchType> {
         let search = self.search();
         let search_text = search.text();
         let result = if self.fixed_strings().checked {
@@ -206,19 +206,25 @@ impl SearchFields {
     }
 }
 
-pub(crate) enum SearchType {
+pub enum SearchType {
     Pattern(Regex),
     Fixed(String),
 }
 
-pub(crate) struct App {
-    pub(crate) current_screen: CurrentScreen,
-    pub(crate) search_fields: SearchFields,
-    pub(crate) results: Results,
+pub struct App {
+    pub current_screen: CurrentScreen,
+    pub search_fields: SearchFields,
+    pub results: Results,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl App {
-    pub(crate) fn new() -> App {
+    pub fn new() -> App {
         App {
             current_screen: CurrentScreen::Searching,
             search_fields: SearchFields {
@@ -233,11 +239,11 @@ impl App {
         }
     }
 
-    pub(crate) fn reset(&mut self) {
+    pub fn reset(&mut self) {
         *self = Self::new();
     }
 
-    pub(crate) fn update_search_results(&mut self) -> anyhow::Result<()> {
+    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
         // TODO: get path from CLI arg
         let repo_path = ".";
 
@@ -319,7 +325,7 @@ impl App {
         Ok(())
     }
 
-    pub(crate) fn perform_replacement(&mut self) {
+    pub fn perform_replacement(&mut self) {
         for (path, results) in &self
             .results
             .search_complete_mut()

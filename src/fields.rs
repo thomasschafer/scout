@@ -8,25 +8,25 @@ use ratatui::{
 };
 
 #[derive(Default)]
-pub(crate) struct TextField {
-    text: String,
-    cursor_idx: usize,
+pub struct TextField {
+    pub text: String,
+    pub cursor_idx: usize,
 }
 
 impl TextField {
-    pub(crate) fn text(&self) -> String {
+    pub fn text(&self) -> String {
         self.text.to_owned()
     }
 
-    pub(crate) fn cursor_idx(&self) -> usize {
+    pub fn cursor_idx(&self) -> usize {
         self.cursor_idx
     }
 
-    pub(crate) fn move_cursor_left(&mut self) {
+    pub fn move_cursor_left(&mut self) {
         self.move_cursor_left_by(1)
     }
 
-    pub(crate) fn move_cursor_start(&mut self) {
+    pub fn move_cursor_start(&mut self) {
         self.cursor_idx = 0;
     }
 
@@ -35,7 +35,7 @@ impl TextField {
         self.cursor_idx = self.clamp_cursor(cursor_moved_left);
     }
 
-    pub(crate) fn move_cursor_right(&mut self) {
+    pub fn move_cursor_right(&mut self) {
         self.move_cursor_right_by(1)
     }
 
@@ -44,11 +44,11 @@ impl TextField {
         self.cursor_idx = self.clamp_cursor(cursor_moved_right);
     }
 
-    pub(crate) fn move_cursor_end(&mut self) {
+    pub fn move_cursor_end(&mut self) {
         self.cursor_idx = self.text.chars().count();
     }
 
-    pub(crate) fn enter_char(&mut self, new_char: char) {
+    pub fn enter_char(&mut self, new_char: char) {
         let index = self.byte_index();
         self.text.insert(index, new_char);
         self.move_cursor_right();
@@ -62,7 +62,7 @@ impl TextField {
             .unwrap_or(self.text.len())
     }
 
-    pub(crate) fn delete_char(&mut self) {
+    pub fn delete_char(&mut self) {
         if self.cursor_idx == 0 {
             return;
         }
@@ -74,7 +74,7 @@ impl TextField {
         self.move_cursor_left();
     }
 
-    pub(crate) fn delete_char_forward(&mut self) {
+    pub fn delete_char_forward(&mut self) {
         let before_char = self.text.chars().take(self.cursor_idx);
         let after_char = self.text.chars().skip(self.cursor_idx + 1);
 
@@ -91,17 +91,17 @@ impl TextField {
         while idx > 0 && before_char[idx] == ' ' {
             idx -= 1;
         }
-        while idx > 0 && before_char[idx] != ' ' {
+        while idx > 0 && before_char[idx - 1] != ' ' {
             idx -= 1;
         }
         idx
     }
 
-    pub(crate) fn move_cursor_back_word(&mut self) {
+    pub fn move_cursor_back_word(&mut self) {
         self.cursor_idx = self.previous_word_start();
     }
 
-    pub(crate) fn delete_word_backward(&mut self) {
+    pub fn delete_word_backward(&mut self) {
         let new_cursor_pos = self.previous_word_start();
         let before_char = self.text.chars().take(new_cursor_pos);
         let after_char = self.text.chars().skip(self.cursor_idx);
@@ -114,20 +114,20 @@ impl TextField {
         let after_char = self.text.chars().skip(self.cursor_idx).collect::<Vec<_>>();
         let mut idx = 0;
         let num_chars = after_char.len();
-        while idx < num_chars && after_char[idx] == ' ' {
+        while idx < num_chars && after_char[idx] != ' ' {
             idx += 1;
         }
-        while idx < num_chars && after_char[idx] != ' ' {
+        while idx < num_chars && after_char[idx] == ' ' {
             idx += 1;
         }
         self.cursor_idx + idx
     }
 
-    pub(crate) fn move_cursor_forward_word(&mut self) {
+    pub fn move_cursor_forward_word(&mut self) {
         self.cursor_idx = self.next_word_start();
     }
 
-    pub(crate) fn delete_word_forward(&mut self) {
+    pub fn delete_word_forward(&mut self) {
         let before_char = self.text.chars().take(self.cursor_idx);
         let after_char = self.text.chars().skip(self.next_word_start());
 
@@ -138,7 +138,7 @@ impl TextField {
         new_cursor_pos.clamp(0, self.text.chars().count())
     }
 
-    pub(crate) fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.text.clear();
         self.cursor_idx = 0;
     }
@@ -196,11 +196,12 @@ impl TextField {
 }
 
 #[derive(Default)]
-pub(crate) struct CheckboxField {
-    pub(crate) checked: bool,
+pub struct CheckboxField {
+    pub checked: bool,
 }
+
 impl CheckboxField {
-    fn handle_keys(&mut self, code: KeyCode, _modifiers: KeyModifiers) {
+    pub fn handle_keys(&mut self, code: KeyCode, _modifiers: KeyModifiers) {
         if code == KeyCode::Char(' ') {
             self.checked = !self.checked;
         }
@@ -213,29 +214,29 @@ pub enum Field {
 }
 
 impl Field {
-    pub(crate) fn text() -> Field {
+    pub fn text() -> Field {
         Field::Text(TextField::default())
     }
 
-    pub(crate) fn checkbox() -> Field {
+    pub fn checkbox() -> Field {
         Field::Checkbox(CheckboxField::default())
     }
 
-    pub(crate) fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+    pub fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         match self {
             Field::Text(f) => f.handle_keys(code, modifiers),
             Field::Checkbox(f) => f.handle_keys(code, modifiers),
         }
     }
 
-    pub(crate) fn cursor_idx(&self) -> Option<usize> {
+    pub fn cursor_idx(&self) -> Option<usize> {
         match self {
             Field::Text(f) => Some(f.cursor_idx()),
             Field::Checkbox(_) => None,
         }
     }
 
-    pub(crate) fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
+    pub fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
         let mut block = Block::bordered();
         if highlighted {
             block = block.border_style(Style::new().green());

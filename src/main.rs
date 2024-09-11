@@ -1,6 +1,5 @@
 use std::io;
 
-use log::{Log, LogLevel};
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
@@ -95,11 +94,8 @@ fn handle_key_results(app: &mut App, key: &KeyEvent) -> bool {
 }
 
 fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()> {
-    let mut logger = Log::new(LogLevel::Info);
-
     loop {
         terminal.draw(|f| ui(f, app))?;
-        logger.info("Redraw performed");
 
         if let Event::Key(key) = event::read()? {
             if key.kind == KeyEventKind::Release {
