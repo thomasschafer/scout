@@ -228,20 +228,19 @@ pub fn ui(frame: &mut Frame, app: &App) {
         }
     }
 
-    let current_keys_hint = {
+    let current_keys_hint = Span::styled(
         match app.current_screen {
             // TODO: update these
-            CurrentScreen::Searching => Span::styled(
-                "<enter> search / <tab> focus next / <S-tab> focus prev / <C-r> reset / <esc> quit",
-                Style::default(),
-            ),
-            CurrentScreen::Confirmation => Span::styled(
-                "<space> toggle / <j> down / <k> up / <C-r> reset / <esc> quit",
-                Style::default(),
-            ),
-            CurrentScreen::Results => Span::styled("<C-r> reset / <esc> quit", Style::default()),
-        }
-    };
+            CurrentScreen::Searching => {
+                "<enter> search / <tab> focus next / <S-tab> focus prev / <C-r> reset / <esc> quit"
+            }
+            CurrentScreen::Confirmation => {
+                "<space> toggle / <j> down / <k> up / <C-r> reset / <esc> quit"
+            }
+            CurrentScreen::Results => "<C-r> reset / <esc> quit",
+        },
+        Color::default(),
+    );
 
     let footer = Paragraph::new(Line::from(current_keys_hint))
         .block(Block::default())
