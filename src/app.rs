@@ -19,13 +19,13 @@ pub enum CurrentScreen {
     Results,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReplaceResult {
     Success,
     Error(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SearchResult {
     pub path: PathBuf,
     pub line_number: usize,
@@ -204,6 +204,30 @@ impl SearchFields {
         };
         Ok(result)
     }
+
+    pub fn with_values(
+        search: impl Into<String>,
+        replace: impl Into<String>,
+        checked: bool,
+    ) -> Self {
+        Self {
+            fields: vec![
+                (
+                    FieldName::Search,
+                    Rc::new(RefCell::new(Field::text(search.into()))),
+                ),
+                (
+                    FieldName::Replace,
+                    Rc::new(RefCell::new(Field::text(replace.into()))),
+                ),
+                (
+                    FieldName::FixedStrings,
+                    Rc::new(RefCell::new(Field::checkbox(checked))),
+                ),
+            ],
+            highlighted: 0,
+        }
+    }
 }
 
 pub enum SearchType {
@@ -227,14 +251,7 @@ impl App {
     pub fn new() -> App {
         App {
             current_screen: CurrentScreen::Searching,
-            search_fields: SearchFields {
-                fields: vec![
-                    (FieldName::Search, Rc::new(Field::text().into())),
-                    (FieldName::Replace, Rc::new(Field::text().into())),
-                    (FieldName::FixedStrings, Rc::new(Field::checkbox().into())),
-                ],
-                highlighted: 0,
-            },
+            search_fields: SearchFields::with_values("", "", false),
             results: Results::Loading,
         }
     }

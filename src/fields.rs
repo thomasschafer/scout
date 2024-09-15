@@ -14,6 +14,12 @@ pub struct TextField {
 }
 
 impl TextField {
+    pub fn new(initial: String) -> Self {
+        Self {
+            text: initial,
+            ..Self::default()
+        }
+    }
     pub fn text(&self) -> String {
         self.text.to_owned()
     }
@@ -201,6 +207,10 @@ pub struct CheckboxField {
 }
 
 impl CheckboxField {
+    pub fn new(initial: bool) -> Self {
+        Self { checked: initial }
+    }
+
     pub fn handle_keys(&mut self, code: KeyCode, _modifiers: KeyModifiers) {
         if code == KeyCode::Char(' ') {
             self.checked = !self.checked;
@@ -214,12 +224,12 @@ pub enum Field {
 }
 
 impl Field {
-    pub fn text() -> Field {
-        Field::Text(TextField::default())
+    pub fn text(initial: impl Into<String>) -> Field {
+        Field::Text(TextField::new(initial.into()))
     }
 
-    pub fn checkbox() -> Field {
-        Field::Checkbox(CheckboxField::default())
+    pub fn checkbox(initial: bool) -> Field {
+        Field::Checkbox(CheckboxField::new(initial))
     }
 
     pub fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
