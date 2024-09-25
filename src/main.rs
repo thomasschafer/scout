@@ -27,7 +27,7 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
             // TODO: handle the error here, e.g. from regex parse errors
-            app.update_search_results()
+            app.update_search_results(None)
                 .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }
         (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {

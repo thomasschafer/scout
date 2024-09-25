@@ -260,20 +260,21 @@ impl App {
         *self = Self::new();
     }
 
-    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
-        // TODO: get path from CLI arg
-        let repo_path = ".";
+    pub fn update_search_results(&mut self, search_path: Option<PathBuf>) -> anyhow::Result<()> {
+        // TODO: allow this to be passed in via CLI arg
+        let search_path = match search_path {
+            Some(path) => path,
+            None => std::env::current_dir().unwrap(),
+        };
 
         let pattern = self.search_fields.search_type()?; // TODO: handle regex not being parsed
 
         let mut results = vec![];
 
-        let walker = WalkBuilder::new(repo_path).ignore(true).build();
-
+        let walker = WalkBuilder::new(search_path.clone()).build();
         for entry in walker.flatten() {
             if entry.file_type().map_or(false, |ft| ft.is_file()) {
                 let path = entry.path();
-
                 let file = match File::open(path) {
                     Ok(file) => file,
                     Err(_err) => {

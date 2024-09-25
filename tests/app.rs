@@ -1,6 +1,6 @@
 use scout::{App, SearchFields};
 use scout::{CurrentScreen, ReplaceResult, ReplaceState, Results, SearchResult, SearchState};
-use std::fs::{self, File};
+use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use tempfile::TempDir;
@@ -137,9 +137,8 @@ fn test_update_search_results_fixed_string() {
 
     app.search_fields = SearchFields::with_values(".*", "example", true);
 
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    app.update_search_results().unwrap();
+    app.update_search_results(Some(temp_dir.path().into()))
+        .unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 1);
@@ -169,39 +168,12 @@ fn test_update_search_results_regex() {
     // TODO: fix flakiness and remove logging below
     let (temp_dir, mut app) = setup_test_environment();
 
-    // Print the contents of all files for debugging
-    for entry in fs::read_dir(temp_dir.path()).unwrap() {
-        let entry = entry.unwrap();
-        let path = entry.path();
-        if path.is_file() {
-            println!("File: {:?}", path);
-            println!("Contents:\n{}", fs::read_to_string(&path).unwrap());
-        }
-    }
-
     app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false);
 
-    println!("Current directory: {:?}", std::env::current_dir().unwrap());
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-    println!(
-        "New current directory: {:?}",
-        std::env::current_dir().unwrap()
-    );
-
-    let update_result = app.update_search_results();
-
-    if let Err(ref e) = update_result {
-        println!("Error updating search results: {:?}", e);
-    }
-
-    update_result.unwrap();
+    app.update_search_results(Some(temp_dir.path().into()))
+        .unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
-        println!("Number of results: {}", search_state.results.len());
-        for result in &search_state.results {
-            println!("File: {:?}, Line: {}", result.path, result.line);
-        }
-
         assert_eq!(search_state.results.len(), 4,);
 
         let mut file_match_counts = std::collections::HashMap::new();
@@ -229,8 +201,6 @@ fn test_update_search_results_regex() {
             );
         }
 
-        println!("File match counts: {:?}", file_match_counts);
-
         assert_eq!(*file_match_counts.get("file1.txt").unwrap_or(&0), 1);
         assert_eq!(*file_match_counts.get("file2.txt").unwrap_or(&0), 1);
         assert_eq!(*file_match_counts.get("file3.txt").unwrap_or(&0), 2);
@@ -244,9 +214,8 @@ fn test_update_search_results_no_matches() {
 
     app.search_fields = SearchFields::with_values("nonexistent", "replacement", false);
 
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    app.update_search_results().unwrap();
+    app.update_search_results(Some(temp_dir.path().into()))
+        .unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 0);
@@ -261,9 +230,7 @@ fn test_update_search_results_invalid_regex() {
 
     app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false);
 
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = app.update_search_results();
+    let result = app.update_search_results(Some(temp_dir.path().into()));
     assert!(result.is_err());
 }
 
