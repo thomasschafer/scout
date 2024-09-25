@@ -239,39 +239,35 @@ pub struct App {
     pub current_screen: CurrentScreen,
     pub search_fields: SearchFields,
     pub results: Results,
-}
-
-impl Default for App {
-    fn default() -> Self {
-        Self::new()
-    }
+    pub directory: PathBuf,
 }
 
 impl App {
-    pub fn new() -> App {
+    pub fn new(directory: Option<PathBuf>) -> App {
+        let directory = match directory {
+            Some(d) => d,
+            None => std::env::current_dir().unwrap(),
+        };
+
         App {
             current_screen: CurrentScreen::Searching,
             search_fields: SearchFields::with_values("", "", false),
             results: Results::Loading,
+            directory,
         }
     }
 
     pub fn reset(&mut self) {
-        *self = Self::new();
+        *self = Self::new(Some(self.directory.clone()));
     }
 
-    pub fn update_search_results(&mut self, search_path: Option<PathBuf>) -> anyhow::Result<()> {
+    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
         // TODO: allow this to be passed in via CLI arg
-        let search_path = match search_path {
-            Some(path) => path,
-            None => std::env::current_dir().unwrap(),
-        };
-
         let pattern = self.search_fields.search_type()?; // TODO: handle regex not being parsed
 
         let mut results = vec![];
 
-        let walker = WalkBuilder::new(search_path.clone()).build();
+        let walker = WalkBuilder::new(&self.directory).build();
         for entry in walker.flatten() {
             if entry.file_type().map_or(false, |ft| ft.is_file()) {
                 let path = entry.path();

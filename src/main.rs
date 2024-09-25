@@ -1,5 +1,4 @@
-use std::io;
-
+use clap::Parser;
 use ratatui::{
     backend::{Backend, CrosstermBackend},
     crossterm::{
@@ -12,6 +11,7 @@ use ratatui::{
     },
     Terminal,
 };
+use std::{io, path::PathBuf, str::FromStr};
 
 mod app;
 mod fields;
@@ -27,7 +27,7 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::Confirmation;
             // TODO: handle the error here, e.g. from regex parse errors
-            app.update_search_results(None)
+            app.update_search_results()
                 .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }
         (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
@@ -123,14 +123,29 @@ fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Res
     }
 }
 
+#[derive(Parser, Debug)]
+#[command(about = "Interactive find and replace TUI.")]
+struct Args {
+    /// Directory in which to search
+    #[arg(index = 1)]
+    directory: Option<String>,
+}
+
 fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     enable_raw_mode()?;
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut app = App::new();
+    let directory = match args.directory {
+        None => None,
+        Some(d) => Some(PathBuf::from_str(d.as_str())?),
+    };
+
+    let mut app = App::new(directory);
     let res = run_app(&mut terminal, &mut app);
 
     disable_raw_mode()?;

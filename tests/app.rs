@@ -75,7 +75,7 @@ fn test_replace_state() {
 
 #[test]
 fn test_app_reset() {
-    let mut app = App::new();
+    let mut app = App::new(None);
     app.current_screen = CurrentScreen::Results;
     app.results = Results::ReplaceComplete(ReplaceState {
         num_successes: 5,
@@ -90,7 +90,7 @@ fn test_app_reset() {
     assert!(matches!(app.results, Results::Loading));
 }
 
-fn setup_test_environment() -> (TempDir, App) {
+fn setup_test_environment() -> App {
     let temp_dir = TempDir::new().unwrap();
 
     // TODO: make a macro for this
@@ -126,19 +126,16 @@ fn setup_test_environment() -> (TempDir, App) {
         file.sync_all().unwrap();
     }
 
-    let app = App::new();
-
-    (temp_dir, app)
+    App::new(Some(temp_dir.into_path()))
 }
 
 #[test]
 fn test_update_search_results_fixed_string() {
-    let (temp_dir, mut app) = setup_test_environment();
+    let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(".*", "example", true);
 
-    app.update_search_results(Some(temp_dir.path().into()))
-        .unwrap();
+    app.update_search_results().unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 1);
@@ -166,12 +163,11 @@ fn test_update_search_results_fixed_string() {
 #[test]
 fn test_update_search_results_regex() {
     // TODO: fix flakiness and remove logging below
-    let (temp_dir, mut app) = setup_test_environment();
+    let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false);
 
-    app.update_search_results(Some(temp_dir.path().into()))
-        .unwrap();
+    app.update_search_results().unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 4,);
@@ -210,12 +206,11 @@ fn test_update_search_results_regex() {
 }
 #[test]
 fn test_update_search_results_no_matches() {
-    let (temp_dir, mut app) = setup_test_environment();
+    let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values("nonexistent", "replacement", false);
 
-    app.update_search_results(Some(temp_dir.path().into()))
-        .unwrap();
+    app.update_search_results().unwrap();
 
     if let scout::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 0);
@@ -226,12 +221,14 @@ fn test_update_search_results_no_matches() {
 
 #[test]
 fn test_update_search_results_invalid_regex() {
-    let (temp_dir, mut app) = setup_test_environment();
+    let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false);
 
-    let result = app.update_search_results(Some(temp_dir.path().into()));
+    let result = app.update_search_results();
     assert!(result.is_err());
 }
 
-// TODO: add tests for replacing in files
+// TODO: add tests for:
+// - replacing in files
+// - passing in directory via CLI arg
