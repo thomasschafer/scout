@@ -1,5 +1,5 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use scout::{CheckboxField, Field, FieldName, SearchFields, SearchType, TextField};
+use scout::{CheckboxField, Field, FieldName, SearchField, SearchFields, SearchType, TextField};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -74,12 +74,18 @@ fn test_checkbox_field() {
 fn test_search_fields() {
     let mut search_fields = SearchFields {
         fields: vec![
-            (FieldName::Search, Rc::new(RefCell::new(Field::text("")))),
-            (FieldName::Replace, Rc::new(RefCell::new(Field::text("")))),
-            (
-                FieldName::FixedStrings,
-                Rc::new(RefCell::new(Field::checkbox(false))),
-            ),
+            SearchField {
+                name: FieldName::Search,
+                field: Rc::new(RefCell::new(Field::text(""))),
+            },
+            SearchField {
+                name: FieldName::Replace,
+                field: Rc::new(RefCell::new(Field::text(""))),
+            },
+            SearchField {
+                name: FieldName::FixedStrings,
+                field: Rc::new(RefCell::new(Field::checkbox(false))),
+            },
         ],
         highlighted: 0,
     };

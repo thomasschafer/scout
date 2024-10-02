@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell},
+    cell::{RefCell, RefMut},
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
@@ -143,21 +143,32 @@ pub enum FieldName {
     FixedStrings,
 }
 
-pub type SearchField = (FieldName, Rc<RefCell<Field>>);
+pub struct SearchField {
+    pub name: FieldName,
+    pub field: Rc<RefCell<Field>>,
+}
+
+impl SearchField {
+    #[allow(dead_code)] // TODO: use
+    fn set_error(&mut self, error: String) {
+        self.field.borrow_mut().set_error(error);
+    }
+}
 
 pub struct SearchFields {
     pub fields: Vec<SearchField>,
     pub highlighted: usize,
 }
 
+// TODO: add non-mutable versions
 macro_rules! define_field_accessor {
     ($method_name:ident, $field_name:expr, $field_variant:ident, $return_type:ty) => {
-        pub fn $method_name(&self) -> Ref<'_, $return_type> {
+        pub fn $method_name(&self) -> RefMut<'_, $return_type> {
             self.fields
                 .iter()
-                .find(|(name, _)| *name == $field_name)
-                .and_then(|(_, field)| {
-                    Ref::filter_map(field.borrow(), |f| {
+                .find(|SearchField { name, .. }| *name == $field_name)
+                .and_then(|SearchField { field, .. }| {
+                    RefMut::filter_map(field.borrow_mut(), |f| {
                         if let Field::$field_variant(inner) = f {
                             Some(inner)
                         } else {
@@ -191,7 +202,7 @@ impl SearchFields {
     }
 
     pub fn highlighted_field(&self) -> &Rc<RefCell<Field>> {
-        &self.fields[self.highlighted].1
+        &self.fields[self.highlighted].field
     }
 
     pub fn search_type(&self) -> anyhow::Result<SearchType> {
@@ -212,18 +223,18 @@ impl SearchFields {
     ) -> Self {
         Self {
             fields: vec![
-                (
-                    FieldName::Search,
-                    Rc::new(RefCell::new(Field::text(search.into()))),
-                ),
-                (
-                    FieldName::Replace,
-                    Rc::new(RefCell::new(Field::text(replace.into()))),
-                ),
-                (
-                    FieldName::FixedStrings,
-                    Rc::new(RefCell::new(Field::checkbox(checked))),
-                ),
+                SearchField {
+                    name: FieldName::Search,
+                    field: Rc::new(RefCell::new(Field::text(search.into()))),
+                },
+                SearchField {
+                    name: FieldName::Replace,
+                    field: Rc::new(RefCell::new(Field::text(replace.into()))),
+                },
+                SearchField {
+                    name: FieldName::FixedStrings,
+                    field: Rc::new(RefCell::new(Field::checkbox(checked))),
+                },
             ],
             highlighted: 0,
         }
@@ -262,8 +273,21 @@ impl App {
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<()> {
-        // TODO: allow this to be passed in via CLI arg
-        let pattern = self.search_fields.search_type()?; // TODO: handle regex not being parsed
+        let pattern = match self.search_fields.search_type() {
+            Err(e) => {
+                if e.downcast_ref::<regex::Error>().is_some() {
+                    self.search_fields
+                        .search()
+                        .set_error("Couldn't parse regex".to_owned());
+                    return Ok(());
+                } else {
+                    return Err(e);
+                }
+            }
+            Ok(p) => p,
+        };
+
+        self.current_screen = CurrentScreen::Confirmation;
 
         let mut results = vec![];
 

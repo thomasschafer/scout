@@ -162,7 +162,6 @@ fn test_update_search_results_fixed_string() {
 
 #[test]
 fn test_update_search_results_regex() {
-    // TODO: fix flakiness and remove logging below
     let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false);

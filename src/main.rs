@@ -23,10 +23,9 @@ use crate::{
 };
 
 fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
+    app.search_fields.search().clear_error();
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) => {
-            app.current_screen = CurrentScreen::Confirmation;
-            // TODO: handle the error here, e.g. from regex parse errors
             app.update_search_results()
                 .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
         }

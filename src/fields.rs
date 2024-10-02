@@ -11,6 +11,7 @@ use ratatui::{
 pub struct TextField {
     pub text: String,
     pub cursor_idx: usize,
+    pub error: Option<String>, // TODO: render this
 }
 
 impl TextField {
@@ -149,6 +150,14 @@ impl TextField {
         self.cursor_idx = 0;
     }
 
+    pub fn set_error(&mut self, error: String) {
+        self.error = Some(error);
+    }
+
+    pub fn clear_error(&mut self) {
+        self.error = None;
+    }
+
     fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
         match (code, modifiers) {
             (KeyCode::Char('w'), KeyModifiers::CONTROL)
@@ -246,25 +255,44 @@ impl Field {
         }
     }
 
+    pub fn set_error(&mut self, error: String) {
+        match self {
+            Field::Text(f) => f.set_error(error),
+            Field::Checkbox(_) => todo!(),
+        }
+    }
+
+    fn error(&self) -> Option<String> {
+        match self {
+            Field::Text(f) => f.error.clone(),
+            Field::Checkbox(_) => None, // TODO
+        }
+    }
+
     pub fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
         let mut block = Block::bordered();
         if highlighted {
             block = block.border_style(Style::new().green());
         }
 
+        let outer_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(3), Constraint::Length(1)])
+            .split(area);
+
         match self {
             Field::Text(f) => {
                 block = block.title(title);
-                frame.render_widget(Paragraph::new(f.text()).block(block), area);
+                frame.render_widget(Paragraph::new(f.text()).block(block), outer_chunks[0]);
             }
             Field::Checkbox(f) => {
-                let chunks = Layout::default()
+                let inner_chunks = Layout::default()
                     .direction(Direction::Horizontal)
                     .constraints([Constraint::Length(5), Constraint::Min(0)])
-                    .split(area);
+                    .split(outer_chunks[0]);
                 frame.render_widget(
                     Paragraph::new(if f.checked { " X " } else { "" }).block(block),
-                    chunks[0],
+                    inner_chunks[0],
                 );
                 frame.render_widget(
                     Paragraph::new(Text::styled(
@@ -275,9 +303,16 @@ impl Field {
                             Color::Reset
                         },
                     )),
-                    chunks[1],
+                    inner_chunks[1],
                 );
             }
         }
+
+        if let Some(error_string) = self.error() {
+            frame.render_widget(
+                Paragraph::new(Text::styled(format!("Error: {error_string}"), Color::Red)),
+                outer_chunks[1],
+            );
+        };
     }
 }
