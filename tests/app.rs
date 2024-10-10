@@ -1,5 +1,7 @@
-use scout::{App, SearchFields};
-use scout::{CurrentScreen, ReplaceResult, ReplaceState, Results, SearchResult, SearchState};
+use scout::{
+    App, CurrentScreen, EventHandler, ReplaceResult, ReplaceState, Results, SearchFields,
+    SearchResult, SearchState,
+};
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
@@ -75,7 +77,9 @@ fn test_replace_state() {
 
 #[test]
 fn test_app_reset() {
-    let mut app = App::new(None);
+    let events = EventHandler::new();
+    let app_event_sender = events.app_event_sender.clone();
+    let mut app = App::new(None, app_event_sender);
     app.current_screen = CurrentScreen::Results;
     app.results = Results::ReplaceComplete(ReplaceState {
         num_successes: 5,
@@ -126,7 +130,9 @@ fn setup_test_environment() -> App {
         file.sync_all().unwrap();
     }
 
-    App::new(Some(temp_dir.into_path()))
+    let events = EventHandler::new();
+    let app_event_sender = events.app_event_sender.clone();
+    App::new(Some(temp_dir.into_path()), app_event_sender)
 }
 
 #[test]

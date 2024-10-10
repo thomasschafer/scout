@@ -1,25 +1,21 @@
 use clap::Parser;
 use ratatui::{
-    backend::{Backend, CrosstermBackend},
-    crossterm::{
-        event::{
-            self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode, KeyEvent, KeyEventKind,
-            KeyModifiers,
-        },
-        execute,
-        terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
-    },
+    backend::CrosstermBackend,
+    crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     Terminal,
 };
 use std::{io, path::PathBuf, str::FromStr};
+use tui::Tui;
 
 mod app;
+mod event;
 mod fields;
 mod log;
+mod tui;
 mod ui;
 use crate::{
     app::{App, CurrentScreen},
-    ui::ui,
+    event::{Event, EventHandler},
 };
 
 fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
@@ -92,34 +88,26 @@ fn handle_key_results(app: &mut App, key: &KeyEvent) -> bool {
     exit
 }
 
-fn run_app<B: Backend>(terminal: &mut Terminal<B>, app: &mut App) -> anyhow::Result<()> {
-    loop {
-        terminal.draw(|f| ui(f, app))?;
-
-        if let Event::Key(key) = event::read()? {
-            if key.kind == KeyEventKind::Release {
-                continue;
-            }
-
-            match (key.code, key.modifiers) {
-                (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(()),
-                (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
-                    app.reset();
-                    continue;
-                }
-                (_, _) => {}
-            }
-
-            let exit = match app.current_screen {
-                CurrentScreen::Searching => handle_key_searching(app, &key),
-                CurrentScreen::Confirmation => handle_key_confirmation(app, &key),
-                CurrentScreen::Results => handle_key_results(app, &key),
-            };
-            if exit {
-                return Ok(());
-            }
-        }
+pub fn handle_key_events(key: KeyEvent, app: &mut App) -> anyhow::Result<bool> {
+    if key.kind == KeyEventKind::Release {
+        return Ok(false);
     }
+
+    match (key.code, key.modifiers) {
+        (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(true),
+        (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+            app.reset();
+            return Ok(false);
+        }
+        (_, _) => {}
+    }
+
+    let exit = match app.current_screen {
+        CurrentScreen::Searching => handle_key_searching(app, &key),
+        CurrentScreen::Confirmation => handle_key_confirmation(app, &key),
+        CurrentScreen::Results => handle_key_results(app, &key),
+    };
+    Ok(exit)
 }
 
 #[derive(Parser, Debug)]
@@ -130,34 +118,38 @@ struct Args {
     directory: Option<String>,
 }
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
 
     let directory = match args.directory {
         None => None,
         Some(d) => Some(PathBuf::from_str(d.as_str())?),
     };
 
-    let mut app = App::new(directory);
-    let res = run_app(&mut terminal, &mut app);
+    let events = EventHandler::new();
+    let app_event_sender = events.app_event_sender.clone();
+    let mut app = App::new(directory, app_event_sender);
 
-    disable_raw_mode()?;
-    execute!(
-        terminal.backend_mut(),
-        LeaveAlternateScreen,
-        DisableMouseCapture
-    )?;
-    terminal.show_cursor()?;
+    let backend = CrosstermBackend::new(io::stdout());
+    let terminal = Terminal::new(backend)?;
+    let mut tui = Tui::new(terminal, events);
+    tui.init()?;
 
-    if let Err(err) = res {
-        println!("{err:?}");
+    while app.running {
+        tui.draw(&mut app)?;
+        let exit = match tui.events.next().await? {
+            Event::Key(key_event) => handle_key_events(key_event, &mut app)?,
+            Event::Mouse(_) => false,
+            Event::Resize(_, _) => false,
+            Event::App(app_event) => app.handle_event(app_event),
+        };
+        if exit {
+            break;
+        }
     }
+
+    tui.exit()?;
 
     Ok(())
 }

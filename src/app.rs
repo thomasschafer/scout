@@ -10,6 +10,7 @@ use std::{
 use ignore::WalkBuilder;
 use itertools::Itertools;
 use regex::Regex;
+use tokio::sync::mpsc;
 
 use crate::fields::{CheckboxField, Field, TextField};
 
@@ -246,15 +247,25 @@ pub enum SearchType {
     Fixed(String),
 }
 
+#[derive(Clone, Debug)]
+pub enum AppEvent {
+    IncrementCounter,
+    DecrementCounter,
+    AsyncIncrement,
+}
+
 pub struct App {
     pub current_screen: CurrentScreen,
     pub search_fields: SearchFields,
     pub results: Results,
     pub directory: PathBuf,
+
+    pub running: bool,
+    pub event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
 impl App {
-    pub fn new(directory: Option<PathBuf>) -> App {
+    pub fn new(directory: Option<PathBuf>, event_sender: mpsc::UnboundedSender<AppEvent>) -> App {
         let directory = match directory {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
@@ -264,12 +275,19 @@ impl App {
             current_screen: CurrentScreen::Searching,
             search_fields: SearchFields::with_values("", "", false),
             results: Results::Loading,
-            directory,
+            directory, // TODO: add this as a field that can be edited
+
+            running: true,
+            event_sender,
         }
     }
 
     pub fn reset(&mut self) {
-        *self = Self::new(Some(self.directory.clone()));
+        *self = Self::new(Some(self.directory.clone()), self.event_sender.clone());
+    }
+
+    pub fn handle_event(&mut self, event: AppEvent) -> bool {
+        todo!()
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<()> {

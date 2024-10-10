@@ -215,7 +215,7 @@ fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListIt
     .map(|(s, style)| ListItem::new(Text::styled(s, style)))
 }
 
-pub fn ui(frame: &mut Frame, app: &App) {
+pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
