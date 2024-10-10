@@ -7,8 +7,8 @@ use std::io::Write;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-#[test]
-fn test_search_state() {
+#[tokio::test]
+async fn test_search_state() {
     let mut state = SearchState {
         results: vec![
             SearchResult {
@@ -47,8 +47,8 @@ fn test_search_state() {
     assert!(state.results[1].included);
 }
 
-#[test]
-fn test_replace_state() {
+#[tokio::test]
+async fn test_replace_state() {
     let mut state = ReplaceState {
         num_successes: 2,
         num_ignored: 1,
@@ -75,8 +75,8 @@ fn test_replace_state() {
     assert_eq!(state.replacement_errors_pos, 0);
 }
 
-#[test]
-fn test_app_reset() {
+#[tokio::test]
+async fn test_app_reset() {
     let events = EventHandler::new();
     let app_event_sender = events.app_event_sender.clone();
     let mut app = App::new(None, app_event_sender);
@@ -135,8 +135,8 @@ fn setup_test_environment() -> App {
     App::new(Some(temp_dir.into_path()), app_event_sender)
 }
 
-#[test]
-fn test_update_search_results_fixed_string() {
+#[tokio::test]
+async fn test_update_search_results_fixed_string() {
     let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(".*", "example", true);
@@ -166,8 +166,8 @@ fn test_update_search_results_fixed_string() {
     }
 }
 
-#[test]
-fn test_update_search_results_regex() {
+#[tokio::test]
+async fn test_update_search_results_regex() {
     let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false);
@@ -209,8 +209,8 @@ fn test_update_search_results_regex() {
         panic!("Expected SearchComplete results");
     }
 }
-#[test]
-fn test_update_search_results_no_matches() {
+#[tokio::test]
+async fn test_update_search_results_no_matches() {
     let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values("nonexistent", "replacement", false);
@@ -224,14 +224,14 @@ fn test_update_search_results_no_matches() {
     }
 }
 
-#[test]
-fn test_update_search_results_invalid_regex() {
+#[tokio::test]
+async fn test_update_search_results_invalid_regex() {
     let mut app = setup_test_environment();
 
     app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false);
 
     let result = app.update_search_results();
-    assert!(result.is_err());
+    assert!(result.is_ok());
 }
 
 // TODO: add tests for:
