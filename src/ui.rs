@@ -194,6 +194,20 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
     };
 }
 
+fn render_loading_view(text: String) -> impl Fn(&mut Frame, &App, Rect) {
+    move |frame: &mut Frame, _app: &App, rect: Rect| {
+        let [area] = Layout::vertical([Constraint::Length(4)])
+            .flex(Flex::Center)
+            .areas(rect);
+
+        let text = Paragraph::new(Line::from(Span::raw(&text)))
+            .block(Block::default())
+            .alignment(Alignment::Center);
+
+        frame.render_widget(text, area);
+    }
+}
+
 fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListItem<'static>; 3] {
     [
         ("".to_owned(), Style::default()),
@@ -215,6 +229,8 @@ fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListIt
     .map(|(s, style)| ListItem::new(Text::styled(s, style)))
 }
 
+type RenderFn = Box<dyn Fn(&mut Frame, &App, Rect)>;
+
 pub fn render(app: &App, frame: &mut Frame) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
@@ -231,17 +247,18 @@ pub fn render(app: &App, frame: &mut Frame) {
         .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);
 
-    match app.current_screen {
-        CurrentScreen::Searching => {
-            render_search_view(frame, app, chunks[1]);
+    let render_fn: RenderFn = match app.current_screen {
+        CurrentScreen::Searching => Box::new(render_search_view),
+        CurrentScreen::PerformingSearch => {
+            Box::new(render_loading_view("Performing search...".to_owned()))
         }
-        CurrentScreen::Confirmation => {
-            render_confirmation_view(frame, app, chunks[1]);
+        CurrentScreen::Confirmation => Box::new(render_confirmation_view),
+        CurrentScreen::PerformingReplacement => {
+            Box::new(render_loading_view("Performing replacement...".to_owned()))
         }
-        CurrentScreen::Results => {
-            render_results_view(frame, app, chunks[1]);
-        }
-    }
+        CurrentScreen::Results => Box::new(render_results_view),
+    };
+    render_fn(frame, app, chunks[1]);
 
     let current_keys_hint = Span::styled(
         match app.current_screen {
@@ -252,7 +269,9 @@ pub fn render(app: &App, frame: &mut Frame) {
             CurrentScreen::Confirmation => {
                 "<space> toggle / <j> down / <k> up / <C-r> reset / <esc> quit"
             }
-            CurrentScreen::Results => "<C-r> reset / <esc> quit",
+            CurrentScreen::PerformingSearch
+            | CurrentScreen::PerformingReplacement
+            | CurrentScreen::Results => "<C-r> reset / <esc> quit",
         },
         Color::default(),
     );

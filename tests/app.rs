@@ -78,8 +78,7 @@ async fn test_replace_state() {
 #[tokio::test]
 async fn test_app_reset() {
     let events = EventHandler::new();
-    let app_event_sender = events.app_event_sender.clone();
-    let mut app = App::new(None, app_event_sender);
+    let mut app = App::new(None, events.app_event_sender);
     app.current_screen = CurrentScreen::Results;
     app.results = Results::ReplaceComplete(ReplaceState {
         num_successes: 5,
@@ -119,7 +118,7 @@ fn setup_test_environment() -> App {
             "file3.txt",
             concat!(
                 "something\n",
-                "123 foo[a-b]+.*bar)(baz 456\n",
+                "123 bar[a-b]+.*bar)(baz 456\n",
                 "something\n"
             ),
         ),
@@ -131,8 +130,7 @@ fn setup_test_environment() -> App {
     }
 
     let events = EventHandler::new();
-    let app_event_sender = events.app_event_sender.clone();
-    App::new(Some(temp_dir.into_path()), app_event_sender)
+    App::new(Some(temp_dir.into_path()), events.app_event_sender)
 }
 
 #[tokio::test]

@@ -1,3 +1,4 @@
+use app::AppEvent;
 use clap::Parser;
 use ratatui::{
     backend::CrosstermBackend,
@@ -22,8 +23,8 @@ fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
     app.search_fields.search().clear_error();
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) => {
-            app.update_search_results()
-                .expect("Failed to unwrap search results"); // TODO: make this async - currently hangs until completed
+            app.current_screen = CurrentScreen::PerformingSearch;
+            app.event_sender.send(AppEvent::PerformSearch).unwrap();
         }
         (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
             app.search_fields.focus_prev();
@@ -55,8 +56,8 @@ fn handle_key_confirmation(app: &mut App, key: &KeyEvent) -> bool {
                 .toggle_selected_inclusion();
         }
         (KeyCode::Enter, _) => {
-            app.current_screen = CurrentScreen::Results;
-            app.perform_replacement(); // TODO: make this async
+            app.current_screen = CurrentScreen::PerformingReplacement;
+            app.event_sender.send(AppEvent::PerformReplacement).unwrap();
         }
         _ => {}
     };
@@ -105,6 +106,7 @@ pub fn handle_key_events(key: KeyEvent, app: &mut App) -> anyhow::Result<bool> {
     let exit = match app.current_screen {
         CurrentScreen::Searching => handle_key_searching(app, &key),
         CurrentScreen::Confirmation => handle_key_confirmation(app, &key),
+        CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => false,
         CurrentScreen::Results => handle_key_results(app, &key),
     };
     Ok(exit)

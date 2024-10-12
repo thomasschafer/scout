@@ -16,7 +16,9 @@ use crate::fields::{CheckboxField, Field, TextField};
 
 pub enum CurrentScreen {
     Searching,
+    PerformingSearch,
     Confirmation,
+    PerformingReplacement,
     Results,
 }
 
@@ -249,9 +251,9 @@ pub enum SearchType {
 
 #[derive(Clone, Debug)]
 pub enum AppEvent {
-    IncrementCounter,
-    DecrementCounter,
-    AsyncIncrement,
+    Rerender,
+    PerformSearch,
+    PerformReplacement,
 }
 
 pub struct App {
@@ -287,7 +289,21 @@ impl App {
     }
 
     pub fn handle_event(&mut self, event: AppEvent) -> bool {
-        todo!()
+        match event {
+            AppEvent::Rerender => {}
+            AppEvent::PerformSearch => {
+                self.update_search_results()
+                    .expect("Failed to unwrap search results"); // TODO: handle?
+                self.current_screen = CurrentScreen::Confirmation;
+                self.event_sender.send(AppEvent::Rerender).unwrap();
+            }
+            AppEvent::PerformReplacement => {
+                self.perform_replacement();
+                self.current_screen = CurrentScreen::Results;
+                self.event_sender.send(AppEvent::Rerender).unwrap();
+            }
+        };
+        false
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<()> {
