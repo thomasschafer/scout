@@ -11,14 +11,15 @@ use ratatui::{
 pub struct TextField {
     pub text: String,
     pub cursor_idx: usize,
-    pub error: Option<String>, // TODO: render this
+    pub error: Option<String>,
 }
 
 impl TextField {
     pub fn new(initial: String) -> Self {
         Self {
             text: initial,
-            ..Self::default()
+            cursor_idx: 0,
+            error: None,
         }
     }
     pub fn text(&self) -> String {
@@ -210,14 +211,17 @@ impl TextField {
     }
 }
 
-#[derive(Default)]
 pub struct CheckboxField {
     pub checked: bool,
+    pub error: Option<String>, // TODO: render this
 }
 
 impl CheckboxField {
     pub fn new(initial: bool) -> Self {
-        Self { checked: initial }
+        Self {
+            checked: initial,
+            error: None,
+        }
     }
 
     pub fn handle_keys(&mut self, code: KeyCode, _modifiers: KeyModifiers) {
@@ -265,7 +269,7 @@ impl Field {
     fn error(&self) -> Option<String> {
         match self {
             Field::Text(f) => f.error.clone(),
-            Field::Checkbox(_) => None, // TODO
+            Field::Checkbox(f) => f.error.clone(),
         }
     }
 

@@ -93,36 +93,41 @@ async fn test_app_reset() {
     assert!(matches!(app.results, Results::Loading));
 }
 
+macro_rules! define_files {
+    ($($name:expr => {$($line:expr),+ $(,)?}),+ $(,)?) => {
+        [
+            $(
+                (
+                    $name,
+                    concat!(
+                        $($line,"\n",)+
+                    )
+                ),
+            )+
+        ]
+    };
+}
+
 fn setup_test_environment() -> App {
     let temp_dir = TempDir::new().unwrap();
 
-    // TODO: make a macro for this
-    for (name, contents) in [
-        (
-            "file1.txt",
-            concat!(
-                "This is a test file\n",
-                "It contains some test content\n",
-                "For testing purposes\n"
-            ),
-        ),
-        (
-            "file2.txt",
-            concat!(
-                "Another test file\n",
-                "With different content\n",
-                "Also for testing\n"
-            ),
-        ),
-        (
-            "file3.txt",
-            concat!(
-                "something\n",
-                "123 bar[a-b]+.*bar)(baz 456\n",
-                "something\n"
-            ),
-        ),
-    ] {
+    for (name, contents) in define_files! {
+        "file1.txt" => {
+            "This is a test file",
+            "It contains some test content",
+            "For testing purposes",
+        },
+        "file2.txt" => {
+            "Another test file",
+            "With different content",
+            "Also for testing",
+        },
+        "file3.txt" => {
+            "something",
+            "123 bar[a-b]+.*bar)(baz 456",
+            "something",
+        }
+    } {
         let path = temp_dir.path().join(name);
         let mut file = File::create(path).unwrap();
         file.write_all(contents.as_bytes()).unwrap();

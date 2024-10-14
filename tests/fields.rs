@@ -56,7 +56,7 @@ fn test_text_field_operations() {
 
 #[test]
 fn test_checkbox_field() {
-    let mut field = CheckboxField::default();
+    let mut field = CheckboxField::new(false);
     assert!(!field.checked);
 
     field.handle_keys(KeyCode::Char(' '), KeyModifiers::empty());

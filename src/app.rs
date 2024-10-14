@@ -293,7 +293,7 @@ impl App {
             AppEvent::Rerender => {}
             AppEvent::PerformSearch => {
                 self.update_search_results()
-                    .expect("Failed to unwrap search results"); // TODO: handle?
+                    .expect("Failed to unwrap search results");
                 self.current_screen = CurrentScreen::Confirmation;
                 self.event_sender.send(AppEvent::Rerender).unwrap();
             }
@@ -386,8 +386,6 @@ impl App {
                 }
             }
         }
-
-        // thread::sleep(time::Duration::from_secs(2)); // TODO: use this to verify loading state
 
         self.results = Results::SearchComplete(SearchState {
             results,

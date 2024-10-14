@@ -81,7 +81,7 @@ fn handle_key_results(app: &mut App, key: &KeyEvent) -> bool {
         (KeyCode::PageDown, _) => {}                      // TODO
         (KeyCode::Char('u'), KeyModifiers::CONTROL) => {} // TODO
         (KeyCode::PageUp, _) => {}                        // TODO
-        (KeyCode::Enter, _) => {
+        (KeyCode::Enter | KeyCode::Char('q'), _) => {
             exit = true;
         }
         _ => {}

@@ -1,5 +1,6 @@
 use std::{cmp::min, iter};
 
+use itertools::Itertools;
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style},
@@ -260,23 +261,30 @@ pub fn render(app: &App, frame: &mut Frame) {
     };
     render_fn(frame, app, chunks[1]);
 
-    let current_keys_hint = Span::styled(
-        match app.current_screen {
-            // TODO: update these
-            CurrentScreen::Searching => {
-                "<enter> search / <tab> focus next / <S-tab> focus prev / <C-r> reset / <esc> quit"
-            }
-            CurrentScreen::Confirmation => {
-                "<space> toggle / <j> down / <k> up / <C-r> reset / <esc> quit"
-            }
-            CurrentScreen::PerformingSearch
-            | CurrentScreen::PerformingReplacement
-            | CurrentScreen::Results => "<C-r> reset / <esc> quit",
-        },
-        Color::default(),
-    );
+    let global_keys = ["<C-r> reset", "<esc> quit"];
+    let current_keys = match app.current_screen {
+        CurrentScreen::Searching => vec![
+            "<enter> search",
+            "<tab> focus next",
+            "<S-tab> focus prev",
+            "<C-r> reset",
+            "<esc> quit",
+        ],
+        CurrentScreen::Confirmation => vec![
+            "<space> toggle",
+            "<j> down",
+            "<k> up",
+            "<C-r> reset",
+            "<esc> quit",
+        ],
+        CurrentScreen::PerformingSearch
+        | CurrentScreen::PerformingReplacement
+        | CurrentScreen::Results => vec![],
+    };
+    let all_keys = current_keys.iter().chain(global_keys.iter()).join(" / ");
+    let keys_hint = Span::styled(all_keys, Color::default());
 
-    let footer = Paragraph::new(Line::from(current_keys_hint))
+    let footer = Paragraph::new(Line::from(keys_hint))
         .block(Block::default())
         .alignment(Alignment::Center);
     frame.render_widget(footer, chunks[2]);
