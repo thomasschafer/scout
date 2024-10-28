@@ -1,7 +1,7 @@
 pub mod app;
 pub mod event;
 pub mod fields;
-pub mod log;
+pub mod logging;
 pub mod ui;
 
 pub use app::*;

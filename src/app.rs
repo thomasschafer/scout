@@ -9,6 +9,7 @@ use std::{
 
 use ignore::WalkBuilder;
 use itertools::Itertools;
+use log::error;
 use regex::Regex;
 use tokio::sync::mpsc;
 
@@ -277,7 +278,7 @@ impl App {
             current_screen: CurrentScreen::Searching,
             search_fields: SearchFields::with_values("", "", false),
             results: Results::Loading,
-            directory, // TODO: add this as a field that can be edited
+            directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
 
             running: true,
             event_sender,
@@ -329,59 +330,32 @@ impl App {
         for entry in walker.flatten() {
             if entry.file_type().map_or(false, |ft| ft.is_file()) {
                 let path = entry.path();
-                let file = match File::open(path) {
-                    Ok(file) => file,
-                    Err(_err) => {
-                        // TODO: log the error here
-                        continue;
-                    }
-                };
-                let reader = BufReader::new(file);
+                match File::open(path) {
+                    Ok(file) => {
+                        let reader = BufReader::new(file);
 
-                for (line_number, line) in reader.lines().enumerate() {
-                    match line {
-                        Ok(line) => {
-                            let maybe_replacement = match pattern {
-                                SearchType::Fixed(ref s) => {
-                                    if line.contains(s) {
-                                        Some(line.replace(
-                                            s,
-                                            self.search_fields.replace().text().as_str(),
-                                        ))
-                                    } else {
-                                        None
-                                    }
+                        for (line_number, line) in reader.lines().enumerate() {
+                            match line {
+                                Ok(line) => {
+                                    if let Some(res) = self.replacement_if_match(
+                                        &pattern,
+                                        line,
+                                        &entry,
+                                        line_number,
+                                    ) {
+                                        results.push(res);
+                                    };
                                 }
-                                SearchType::Pattern(ref p) => {
-                                    if p.is_match(&line) {
-                                        Some(
-                                            p.replace_all(
-                                                &line,
-                                                self.search_fields.replace().text(),
-                                            )
-                                            .to_string(),
-                                        )
-                                    } else {
-                                        None
-                                    }
+                                Err(err) => {
+                                    error!("Error opening file {:?}: {err}", path);
+                                    continue;
                                 }
-                            };
-
-                            if let Some(replacement) = maybe_replacement {
-                                results.push(SearchResult {
-                                    path: entry.path().to_path_buf(),
-                                    line_number: line_number + 1,
-                                    line: line.clone(),
-                                    replacement,
-                                    included: true,
-                                    replace_result: None,
-                                });
                             }
                         }
-                        Err(_err) => {
-                            // TODO: log the error here
-                            continue;
-                        }
+                    }
+                    Err(err) => {
+                        error!("Error opening file {:?}: {err}", path);
+                        continue;
                     }
                 }
             }
@@ -393,6 +367,43 @@ impl App {
         });
 
         Ok(())
+    }
+
+    fn replacement_if_match(
+        &mut self,
+        pattern: &SearchType,
+        line: String,
+        entry: &ignore::DirEntry,
+        line_number: usize,
+    ) -> Option<SearchResult> {
+        let maybe_replacement = match *pattern {
+            SearchType::Fixed(ref s) => {
+                if line.contains(s) {
+                    Some(line.replace(s, self.search_fields.replace().text().as_str()))
+                } else {
+                    None
+                }
+            }
+            SearchType::Pattern(ref p) => {
+                if p.is_match(&line) {
+                    Some(
+                        p.replace_all(&line, self.search_fields.replace().text())
+                            .to_string(),
+                    )
+                } else {
+                    None
+                }
+            }
+        };
+
+        maybe_replacement.map(|replacement| SearchResult {
+            path: entry.path().to_path_buf(),
+            line_number: line_number + 1,
+            line: line.clone(),
+            replacement,
+            included: true,
+            replace_result: None,
+        })
     }
 
     pub fn perform_replacement(&mut self) {

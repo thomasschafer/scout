@@ -1,5 +1,6 @@
 use app::AppEvent;
 use clap::Parser;
+use logging::setup_logging;
 use ratatui::{
     backend::CrosstermBackend,
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -11,7 +12,7 @@ use tui::Tui;
 mod app;
 mod event;
 mod fields;
-mod log;
+mod logging;
 mod tui;
 mod ui;
 use crate::{
@@ -122,6 +123,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_logging()?;
+
     let args = Args::parse();
 
     let directory = match args.directory {

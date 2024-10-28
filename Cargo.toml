@@ -7,14 +7,17 @@ edition = "2021"
 anyhow = "1.0.86"
 clap = { version = "4.5.18", features = ["derive"] }
 crossterm = { version = "0.27", features = ["event-stream"] }
+dirs = "5.0.1"
 etcetera = "0.8.0"
 futures = "0.3.31"
 ignore = "0.4.22"
 itertools = "0.13.0"
+log = "0.4.22"
 ratatui = "0.27.0"
 regex = "1.10.6"
 serde = { version = "1.0.204", features = ["derive"] }
 serde_json = "1.0.120"
+simple-log = "2.1.1"
 tokio = { version = "1.40.0", features = ["full"] }
 
 [dev-dependencies]
