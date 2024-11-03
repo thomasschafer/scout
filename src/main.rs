@@ -15,13 +15,14 @@ mod fields;
 mod logging;
 mod tui;
 mod ui;
+mod utils;
 use crate::{
     app::{App, CurrentScreen},
     event::{Event, EventHandler},
 };
 
 fn handle_key_searching(app: &mut App, key: &KeyEvent) -> bool {
-    app.search_fields.search().clear_error();
+    app.search_fields.clear_errors();
     match (key.code, key.modifiers) {
         (KeyCode::Enter, _) => {
             app.current_screen = CurrentScreen::PerformingSearch;

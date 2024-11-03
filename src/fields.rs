@@ -266,6 +266,13 @@ impl Field {
         }
     }
 
+    pub fn clear_error(&mut self) {
+        match self {
+            Field::Text(f) => f.clear_error(),
+            Field::Checkbox(_) => {} // TODO
+        }
+    }
+
     fn error(&self) -> Option<String> {
         match self {
             Field::Text(f) => f.error.clone(),

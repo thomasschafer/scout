@@ -86,6 +86,10 @@ fn test_search_fields() {
                 name: FieldName::FixedStrings,
                 field: Rc::new(RefCell::new(Field::checkbox(false))),
             },
+            SearchField {
+                name: FieldName::FilenamePattern,
+                field: Rc::new(RefCell::new(Field::text(""))),
+            },
         ],
         highlighted: 0,
     };

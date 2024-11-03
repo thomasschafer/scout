@@ -9,11 +9,14 @@ use std::{
 
 use ignore::WalkBuilder;
 use itertools::Itertools;
-use log::error;
+use log::{error, info};
 use regex::Regex;
 use tokio::sync::mpsc;
 
-use crate::fields::{CheckboxField, Field, TextField};
+use crate::{
+    fields::{CheckboxField, Field, TextField},
+    utils::replace_start,
+};
 
 pub enum CurrentScreen {
     Searching,
@@ -145,6 +148,7 @@ pub enum FieldName {
     Search,
     Replace,
     FixedStrings,
+    FilenamePattern,
 }
 
 pub struct SearchField {
@@ -195,6 +199,12 @@ impl SearchFields {
         Checkbox,
         CheckboxField
     );
+    define_field_accessor!(
+        filename_pattern,
+        FieldName::FilenamePattern,
+        Text,
+        TextField
+    );
 
     pub fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
@@ -220,10 +230,17 @@ impl SearchFields {
         Ok(result)
     }
 
+    pub fn clear_errors(&mut self) {
+        self.fields.iter().for_each(|field| {
+            field.field.borrow_mut().clear_error();
+        });
+    }
+
     pub fn with_values(
         search: impl Into<String>,
         replace: impl Into<String>,
         checked: bool,
+        filname_pattern: impl Into<String>,
     ) -> Self {
         Self {
             fields: vec![
@@ -238,6 +255,10 @@ impl SearchFields {
                 SearchField {
                     name: FieldName::FixedStrings,
                     field: Rc::new(RefCell::new(Field::checkbox(checked))),
+                },
+                SearchField {
+                    name: FieldName::FilenamePattern,
+                    field: Rc::new(RefCell::new(Field::text(filname_pattern.into()))),
                 },
             ],
             highlighted: 0,
@@ -276,7 +297,7 @@ impl App {
 
         App {
             current_screen: CurrentScreen::Searching,
-            search_fields: SearchFields::with_values("", "", false),
+            search_fields: SearchFields::with_values("", "", false, ""),
             results: Results::Loading,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
 
@@ -293,9 +314,14 @@ impl App {
         match event {
             AppEvent::Rerender => {}
             AppEvent::PerformSearch => {
-                self.update_search_results()
+                let continue_to_confirmation = self
+                    .update_search_results()
                     .expect("Failed to unwrap search results");
-                self.current_screen = CurrentScreen::Confirmation;
+                self.current_screen = if continue_to_confirmation {
+                    CurrentScreen::Confirmation
+                } else {
+                    CurrentScreen::Searching
+                };
                 self.event_sender.send(AppEvent::Rerender).unwrap();
             }
             AppEvent::PerformReplacement => {
@@ -307,14 +333,15 @@ impl App {
         false
     }
 
-    pub fn update_search_results(&mut self) -> anyhow::Result<()> {
+    pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
         let pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
+                    info!("Error when parsing search regex {}", e);
                     self.search_fields
                         .search()
                         .set_error("Couldn't parse regex".to_owned());
-                    return Ok(());
+                    return Ok(false);
                 } else {
                     return Err(e);
                 }
@@ -326,12 +353,36 @@ impl App {
 
         let mut results = vec![];
 
-        WalkBuilder::new(&self.directory)
+        let s = self.search_fields.filename_pattern().text();
+        let patt = if s.is_empty() {
+            None
+        } else {
+            match Regex::new(s.as_str()) {
+                Err(e) => {
+                    info!("Error when parsing filname pattern regex {}", e);
+                    self.search_fields
+                        .filename_pattern()
+                        .set_error("Couldn't parse regex".to_owned());
+                    return Ok(false);
+                }
+                Ok(r) => Some(r),
+            }
+        };
+
+        let paths: Vec<_> = WalkBuilder::new(&self.directory)
             .build()
             .flatten()
             .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
-            .for_each(|path| match File::open(path.clone()) {
+            .filter(|path| {
+                patt.as_ref().map_or(true, |p| {
+                    p.is_match(self.relative_path(path.clone()).as_str())
+                })
+            })
+            .collect();
+
+        for path in paths {
+            match File::open(path.clone()) {
                 Ok(file) => {
                     let reader = BufReader::new(file);
 
@@ -356,14 +407,15 @@ impl App {
                 Err(err) => {
                     error!("Error opening file {:?}: {err}", path);
                 }
-            });
+            }
+        }
 
         self.results = Results::SearchComplete(SearchState {
             results,
             selected: 0,
         });
 
-        Ok(())
+        Ok(true)
     }
 
     fn replacement_if_match(
@@ -488,5 +540,17 @@ impl App {
         writer.flush()?;
         fs::rename(temp_file_path, file_path)?;
         Ok(())
+    }
+
+    // let path = self
+    //     .path
+    //     .clone()
+    pub fn relative_path(self: &App, path: PathBuf) -> String {
+        let current_dir = self.directory.to_str().unwrap();
+        let path = path
+            .into_os_string()
+            .into_string()
+            .expect("Failed to display path");
+        replace_start(path, current_dir, ".")
     }
 }

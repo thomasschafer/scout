@@ -142,7 +142,7 @@ fn setup_test_environment() -> App {
 async fn test_update_search_results_fixed_string() {
     let mut app = setup_test_environment();
 
-    app.search_fields = SearchFields::with_values(".*", "example", true);
+    app.search_fields = SearchFields::with_values(".*", "example", true, "");
 
     app.update_search_results().unwrap();
 
@@ -173,7 +173,7 @@ async fn test_update_search_results_fixed_string() {
 async fn test_update_search_results_regex() {
     let mut app = setup_test_environment();
 
-    app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false);
+    app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false, "");
 
     app.update_search_results().unwrap();
 
@@ -216,7 +216,7 @@ async fn test_update_search_results_regex() {
 async fn test_update_search_results_no_matches() {
     let mut app = setup_test_environment();
 
-    app.search_fields = SearchFields::with_values("nonexistent", "replacement", false);
+    app.search_fields = SearchFields::with_values("nonexistent", "replacement", false, "");
 
     app.update_search_results().unwrap();
 
@@ -231,7 +231,7 @@ async fn test_update_search_results_no_matches() {
 async fn test_update_search_results_invalid_regex() {
     let mut app = setup_test_environment();
 
-    app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false);
+    app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false, "");
 
     let result = app.update_search_results();
     assert!(result.is_ok());
