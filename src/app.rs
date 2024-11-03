@@ -326,40 +326,37 @@ impl App {
 
         let mut results = vec![];
 
-        let walker = WalkBuilder::new(&self.directory).build();
-        for entry in walker.flatten() {
-            if entry.file_type().map_or(false, |ft| ft.is_file()) {
-                let path = entry.path();
-                match File::open(path) {
-                    Ok(file) => {
-                        let reader = BufReader::new(file);
+        WalkBuilder::new(&self.directory)
+            .build()
+            .flatten()
+            .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
+            .map(|entry| entry.path().to_path_buf())
+            .for_each(|path| match File::open(path.clone()) {
+                Ok(file) => {
+                    let reader = BufReader::new(file);
 
-                        for (line_number, line) in reader.lines().enumerate() {
-                            match line {
-                                Ok(line) => {
-                                    if let Some(res) = self.replacement_if_match(
-                                        &pattern,
-                                        line,
-                                        &entry,
-                                        line_number,
-                                    ) {
-                                        results.push(res);
-                                    };
-                                }
-                                Err(err) => {
-                                    error!("Error opening file {:?}: {err}", path);
-                                    continue;
-                                }
+                    for (line_number, line) in reader.lines().enumerate() {
+                        match line {
+                            Ok(line) => {
+                                if let Some(res) = self.replacement_if_match(
+                                    &pattern,
+                                    line,
+                                    path.clone(),
+                                    line_number,
+                                ) {
+                                    results.push(res);
+                                };
+                            }
+                            Err(err) => {
+                                error!("Error opening file {:?}: {err}", path);
                             }
                         }
                     }
-                    Err(err) => {
-                        error!("Error opening file {:?}: {err}", path);
-                        continue;
-                    }
                 }
-            }
-        }
+                Err(err) => {
+                    error!("Error opening file {:?}: {err}", path);
+                }
+            });
 
         self.results = Results::SearchComplete(SearchState {
             results,
@@ -373,7 +370,7 @@ impl App {
         &mut self,
         pattern: &SearchType,
         line: String,
-        entry: &ignore::DirEntry,
+        path: PathBuf,
         line_number: usize,
     ) -> Option<SearchResult> {
         let maybe_replacement = match *pattern {
@@ -397,7 +394,7 @@ impl App {
         };
 
         maybe_replacement.map(|replacement| SearchResult {
-            path: entry.path().to_path_buf(),
+            path,
             line_number: line_number + 1,
             line: line.clone(),
             replacement,
