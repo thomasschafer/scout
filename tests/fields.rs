@@ -101,9 +101,11 @@ fn test_search_fields() {
     search_fields.focus_next();
     assert_eq!(search_fields.highlighted, 2);
     search_fields.focus_next();
+    assert_eq!(search_fields.highlighted, 3);
+    search_fields.focus_next();
     assert_eq!(search_fields.highlighted, 0);
     search_fields.focus_prev();
-    assert_eq!(search_fields.highlighted, 2);
+    assert_eq!(search_fields.highlighted, 3);
     search_fields.focus_next();
     assert_eq!(search_fields.highlighted, 0);
 
