@@ -163,8 +163,10 @@ impl SearchField {
     }
 }
 
+pub const NUM_SEARCH_FIELDS: usize = 4; // needed because Ratatui .areas method returns an array
+
 pub struct SearchFields {
-    pub fields: Vec<SearchField>,
+    pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
 }
 
@@ -243,7 +245,7 @@ impl SearchFields {
         filname_pattern: impl Into<String>,
     ) -> Self {
         Self {
-            fields: vec![
+            fields: [
                 SearchField {
                     name: FieldName::Search,
                     field: Rc::new(RefCell::new(Field::text(search.into()))),
@@ -542,9 +544,6 @@ impl App {
         Ok(())
     }
 
-    // let path = self
-    //     .path
-    //     .clone()
     pub fn relative_path(self: &App, path: PathBuf) -> String {
         let current_dir = self.directory.to_str().unwrap();
         let path = path

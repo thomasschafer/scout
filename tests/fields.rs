@@ -73,7 +73,7 @@ fn test_checkbox_field() {
 #[test]
 fn test_search_fields() {
     let mut search_fields = SearchFields {
-        fields: vec![
+        fields: [
             SearchField {
                 name: FieldName::Search,
                 field: Rc::new(RefCell::new(Field::text(""))),

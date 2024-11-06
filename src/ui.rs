@@ -9,7 +9,9 @@ use ratatui::{
     Frame,
 };
 
-use crate::app::{App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult};
+use crate::app::{
+    App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+};
 
 impl FieldName {
     pub(crate) fn title(&self) -> &str {
@@ -26,7 +28,7 @@ fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let areas: [Rect; 4] = // TODO: find a better way of doing this, maybe a macro
+    let areas: [Rect; NUM_SEARCH_FIELDS] =
         Layout::vertical(iter::repeat(Constraint::Length(4)).take(app.search_fields.fields.len()))
             .flex(Flex::Center)
             .areas(area);
