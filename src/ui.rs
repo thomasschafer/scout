@@ -19,7 +19,7 @@ impl FieldName {
             FieldName::Search => "Search text",
             FieldName::Replace => "Replace text",
             FieldName::FixedStrings => "Fixed strings",
-            FieldName::FilenamePattern => "Filename pattern",
+            FieldName::FilenamePattern => "Filename pattern (regex)",
         }
     }
 }
