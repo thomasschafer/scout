@@ -246,20 +246,11 @@ pub fn render(app: &App, frame: &mut Frame) {
 
     let global_keys = ["<C-r> reset", "<esc> quit"];
     let current_keys = match app.current_screen {
-        CurrentScreen::Searching => vec![
-            "<enter> search",
-            "<tab> focus next",
-            "<S-tab> focus prev",
-            "<C-r> reset",
-            "<esc> quit",
-        ],
-        CurrentScreen::Confirmation => vec![
-            "<space> toggle",
-            "<j> down",
-            "<k> up",
-            "<C-r> reset",
-            "<esc> quit",
-        ],
+        CurrentScreen::Searching => {
+            vec!["<enter> search", "<tab> focus next", "<S-tab> focus prev"]
+        }
+
+        CurrentScreen::Confirmation => vec!["<space> toggle", "<j> down", "<k> up"],
         CurrentScreen::PerformingSearch
         | CurrentScreen::PerformingReplacement
         | CurrentScreen::Results => vec![],
