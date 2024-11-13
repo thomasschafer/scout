@@ -34,3 +34,6 @@ tempfile = "3.12.0"
 [lib]
 name = "scooter"
 path = "src/lib.rs"
+
+[profile.release]
+lto = true
