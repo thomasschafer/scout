@@ -1,5 +1,5 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use scout::{CheckboxField, Field, FieldName, SearchField, SearchFields, SearchType, TextField};
+use scooter::{CheckboxField, Field, FieldName, SearchField, SearchFields, SearchType, TextField};
 use std::cell::RefCell;
 use std::rc::Rc;
 

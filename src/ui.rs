@@ -226,7 +226,7 @@ pub fn render(app: &App, frame: &mut Frame) {
         .split(frame.size());
 
     let title_block = Block::default().style(Style::default());
-    let title = Paragraph::new(Text::styled("Scout", Style::default()))
+    let title = Paragraph::new(Text::styled("Scooter", Style::default()))
         .block(title_block)
         .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);

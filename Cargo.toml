@@ -1,7 +1,15 @@
 [package]
-name = "scout"
+name = "scooter"
 version = "0.1.0"
 edition = "2021"
+authors = ["thomasschafer97@gmail.com"]
+license = "MIT"
+description = "Interactive find and replace in the terminal"
+readme = "README.md"
+homepage = "https://github.com/thomasschafer/scooter"
+repository = "https://github.com/thomasschafer/scooter"
+keywords = ["cli", "find", "search", "replace"]
+categories = ["command-line-utilities"]
 
 [dependencies]
 anyhow = "1.0.86"
@@ -24,5 +32,5 @@ tokio = { version = "1.40.0", features = ["full"] }
 tempfile = "3.12.0"
 
 [lib]
-name = "scout"
+name = "scooter"
 path = "src/lib.rs"

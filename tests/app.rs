@@ -1,4 +1,4 @@
-use scout::{
+use scooter::{
     App, CurrentScreen, EventHandler, ReplaceResult, ReplaceState, Results, SearchFields,
     SearchResult, SearchState,
 };
@@ -146,7 +146,7 @@ async fn test_update_search_results_fixed_string() {
 
     app.update_search_results().unwrap();
 
-    if let scout::Results::SearchComplete(search_state) = &app.results {
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 1);
 
         for (file_name, num_matches) in [("file1.txt", 0), ("file1.txt", 0), ("file3.txt", 1)] {
@@ -177,7 +177,7 @@ async fn test_update_search_results_regex() {
 
     app.update_search_results().unwrap();
 
-    if let scout::Results::SearchComplete(search_state) = &app.results {
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 4,);
 
         let mut file_match_counts = std::collections::HashMap::new();
@@ -220,7 +220,7 @@ async fn test_update_search_results_no_matches() {
 
     app.update_search_results().unwrap();
 
-    if let scout::Results::SearchComplete(search_state) = &app.results {
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 0);
     } else {
         panic!("Expected SearchComplete results");
@@ -278,7 +278,7 @@ async fn test_update_search_results_filtered_dir() {
     let result = app.update_search_results();
     assert!(result.is_ok());
 
-    if let scout::Results::SearchComplete(search_state) = &app.results {
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 2);
 
         for (file_name, num_matches) in [

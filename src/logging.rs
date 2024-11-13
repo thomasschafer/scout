@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use etcetera::base_strategy::{choose_base_strategy, BaseStrategy};
 
-const APP_NAME: &str = "scout";
+const APP_NAME: &str = "scooter";
 
 pub fn cache_dir() -> PathBuf {
     let strategy = choose_base_strategy().expect("Error when finding cache directory");
