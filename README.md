@@ -8,6 +8,12 @@ If the instance you're attempting to replace has changed since the search was pe
 
 ![Scooter preview](media/preview.gif)
 
+## Features
+
+Scooter respects both `.gitignore` and `.ignore` files.
+
+You can add capture groups to the search regex and use them in the replacement string: for instance, if you use `(\d) - (\w+)` for the search text and `($2) "$1"` as the replacement, then `9 - foo` would be replaced with `(foo) "9"`.
+
 ## Installation
 
 ### Cargo
