@@ -281,17 +281,21 @@ async fn test_update_search_results_filtered_dir() {
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 2);
 
-        for (file_name, num_matches) in [
-            ("dir1/file1.txt", 0),
-            ("dir2/file2.txt", 1),
-            ("dir2/file3.txt", 1),
+        for (file_path, num_matches) in [
+            (Path::new("dir1").join("file1.txt"), 0),
+            (Path::new("dir2").join("file2.txt"), 1),
+            (Path::new("dir2").join("file3.txt"), 1),
         ] {
             println!("Results: {:?}", search_state.results);
             assert_eq!(
                 search_state
                     .results
                     .iter()
-                    .filter(|r| r.path.to_str().unwrap().contains(file_name))
+                    .filter(|result| {
+                        let result_path = result.path.to_str().unwrap();
+                        let file_path = file_path.to_str().unwrap();
+                        result_path.contains(file_path)
+                    })
                     .count(),
                 num_matches
             );
