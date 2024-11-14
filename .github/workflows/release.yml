@@ -1,0 +1,63 @@
+name: Release
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - 'Cargo.toml'
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get package info from Cargo.toml
+        id: get-package-info
+        run: |
+          version=$(grep -m1 '^version = ' Cargo.toml | cut -d '"' -f2)
+          package_name=$(grep -m1 '^name = ' Cargo.toml | cut -d '"' -f2)
+          echo "version=${version}" >> $GITHUB_OUTPUT
+          echo "package_name=${package_name}" >> $GITHUB_OUTPUT
+
+      - name: Check if version exists on crates.io
+        id: check-version
+        run: |
+          version="${{ steps.get-package-info.outputs.version }}"
+          package_name="${{ steps.get-package-info.outputs.package_name }}"
+          if cargo search "${package_name}" | grep -q "^${package_name} = \"${version}\""; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Create release
+        if: steps.check-version.outputs.exists == 'false'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${{ steps.get-package-info.outputs.version }}"
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+
+          git tag -a "v${version}" -m "Release v${version}"
+          git push origin "v${version}"
+
+          gh release create "v${version}" \
+            --title "Release v${version}" \
+            --generate-notes
+
+      - name: Install Rust toolchain
+        if: steps.check-version.outputs.exists == 'false'
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        if: steps.check-version.outputs.exists == 'false'
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish to crates.io
+        if: steps.check-version.outputs.exists == 'false'
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish
