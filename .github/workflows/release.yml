@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
     paths:
       - 'Cargo.toml'
+  workflow_dispatch:  # Allows manual triggering
+
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -12,6 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get package info from Cargo.toml
         id: get-package-info
