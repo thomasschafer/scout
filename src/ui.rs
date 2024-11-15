@@ -250,7 +250,9 @@ pub fn render(app: &App, frame: &mut Frame) {
             vec!["<enter> search", "<tab> focus next", "<S-tab> focus prev"]
         }
 
-        CurrentScreen::Confirmation => vec!["<space> toggle", "<j> down", "<k> up"],
+        CurrentScreen::Confirmation => {
+            vec!["<enter> search", "<space> toggle", "<j> down", "<k> up"]
+        }
         CurrentScreen::PerformingSearch
         | CurrentScreen::PerformingReplacement
         | CurrentScreen::Results => vec![],
