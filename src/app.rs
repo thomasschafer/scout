@@ -1,3 +1,8 @@
+use ignore::WalkBuilder;
+use itertools::Itertools;
+use log::{error, info};
+use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use regex::Regex;
 use std::{
     cell::{RefCell, RefMut},
     collections::HashMap,
@@ -6,11 +11,6 @@ use std::{
     path::PathBuf,
     rc::Rc,
 };
-
-use ignore::WalkBuilder;
-use itertools::Itertools;
-use log::{error, info};
-use regex::Regex;
 use tokio::sync::mpsc;
 
 use crate::{
@@ -18,6 +18,7 @@ use crate::{
     utils::replace_start,
 };
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum CurrentScreen {
     Searching,
     PerformingSearch,
@@ -42,6 +43,7 @@ pub struct SearchResult {
     pub replace_result: Option<ReplaceResult>,
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
     pub results: Vec<SearchResult>,
     pub selected: usize, // TODO: allow for selection of ranges
@@ -73,6 +75,7 @@ impl SearchState {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub struct ReplaceState {
     pub num_successes: usize,
     pub num_ignored: usize,
@@ -97,6 +100,7 @@ impl ReplaceState {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
 pub enum Results {
     Loading,
     SearchComplete(SearchState),
@@ -333,6 +337,107 @@ impl App {
             }
         };
         false
+    }
+
+    fn handle_key_searching(&mut self, key: &KeyEvent) -> bool {
+        self.search_fields.clear_errors();
+        match (key.code, key.modifiers) {
+            (KeyCode::Enter, _) => {
+                self.current_screen = CurrentScreen::PerformingSearch;
+                self.event_sender.send(AppEvent::PerformSearch).unwrap();
+            }
+            (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
+                self.search_fields.focus_prev();
+            }
+            (KeyCode::Tab, _) => {
+                self.search_fields.focus_next();
+            }
+            (code, modifiers) => {
+                self.search_fields
+                    .highlighted_field()
+                    .borrow_mut()
+                    .handle_keys(code, modifiers);
+            }
+        };
+        false
+    }
+
+    fn handle_key_confirmation(&mut self, key: &KeyEvent) -> bool {
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('j') | KeyCode::Down, _)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.results.search_complete_mut().move_selected_down();
+            }
+            (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.results.search_complete_mut().move_selected_up();
+            }
+            (KeyCode::Char(' '), _) => {
+                self.results
+                    .search_complete_mut()
+                    .toggle_selected_inclusion();
+            }
+            (KeyCode::Enter, _) => {
+                self.current_screen = CurrentScreen::PerformingReplacement;
+                self.event_sender
+                    .send(AppEvent::PerformReplacement)
+                    .unwrap();
+            }
+            (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
+                self.current_screen = CurrentScreen::Searching;
+                self.event_sender.send(AppEvent::Rerender).unwrap();
+            }
+            _ => {}
+        };
+        false
+    }
+
+    fn handle_key_results(&mut self, key: &KeyEvent) -> bool {
+        let mut exit = false;
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('j') | KeyCode::Down, _)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.results
+                    .replace_complete_mut()
+                    .scroll_replacement_errors_down();
+            }
+            (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.results
+                    .replace_complete_mut()
+                    .scroll_replacement_errors_up();
+            }
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {} // TODO
+            (KeyCode::PageDown, _) => {}                      // TODO
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {} // TODO
+            (KeyCode::PageUp, _) => {}                        // TODO
+            (KeyCode::Enter | KeyCode::Char('q'), _) => {
+                exit = true;
+            }
+            _ => {}
+        };
+        exit
+    }
+
+    pub fn handle_key_events(&mut self, key: &KeyEvent) -> anyhow::Result<bool> {
+        if key.kind == KeyEventKind::Release {
+            return Ok(false);
+        }
+
+        match (key.code, key.modifiers) {
+            (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(true),
+            (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
+                self.reset();
+                return Ok(false);
+            }
+            (_, _) => {}
+        }
+
+        let exit = match self.current_screen {
+            CurrentScreen::Searching => self.handle_key_searching(key),
+            CurrentScreen::Confirmation => self.handle_key_confirmation(key),
+            CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => false,
+            CurrentScreen::Results => self.handle_key_results(key),
+        };
+        Ok(exit)
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
