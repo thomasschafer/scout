@@ -18,7 +18,7 @@ You can add capture groups to the search regex and use them in the replacement s
 
 ### Cargo
 
-Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), and then run
+Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run:
 
 ```sh
 cargo install scooter
@@ -26,9 +26,11 @@ cargo install scooter
 
 ### Building from source
 
-Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then pull down the repo and run
+Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run the following commands:
 
 ```sh
+git clone git@github.com:thomasschafer/scooter.git
+cd scooter
 cargo install --path .
 ```
 
