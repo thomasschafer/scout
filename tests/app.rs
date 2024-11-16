@@ -1,13 +1,11 @@
+use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
 use scooter::{
     App, CurrentScreen, EventHandler, ReplaceResult, ReplaceState, Results, SearchFields,
     SearchResult, SearchState,
 };
-use std::fs;
-use std::fs::create_dir_all;
-use std::fs::File;
+use std::fs::{self, create_dir_all, File};
 use std::io::Write;
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 #[tokio::test]
@@ -94,6 +92,30 @@ async fn test_app_reset() {
 
     assert!(matches!(app.current_screen, CurrentScreen::Searching));
     assert!(matches!(app.results, Results::Loading));
+}
+
+#[tokio::test]
+async fn test_back_from_results() {
+    let events = EventHandler::new();
+    let mut app = App::new(None, events.app_event_sender);
+    app.current_screen = CurrentScreen::Confirmation;
+    app.search_fields = SearchFields::with_values("foo", "bar", true, "pattern");
+
+    let exit = app
+        .handle_key_events(&KeyEvent {
+            code: KeyCode::Char('o'),
+            modifiers: KeyModifiers::CONTROL,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+        .unwrap();
+    assert!(!exit);
+    assert_eq!(app.search_fields.search().text, "foo");
+    assert_eq!(app.search_fields.replace().text, "bar");
+    assert!(app.search_fields.fixed_strings().checked);
+    assert_eq!(app.search_fields.filename_pattern().text, "pattern");
+    assert_eq!(app.current_screen, CurrentScreen::Searching);
+    assert_eq!(app.results, Results::Loading);
 }
 
 macro_rules! create_test_files {

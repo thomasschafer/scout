@@ -251,7 +251,13 @@ pub fn render(app: &App, frame: &mut Frame) {
         }
 
         CurrentScreen::Confirmation => {
-            vec!["<enter> search", "<space> toggle", "<j> down", "<k> up"]
+            vec![
+                "<enter> search",
+                "<space> toggle",
+                "<j> down",
+                "<k> up",
+                "<C-o> back",
+            ]
         }
         CurrentScreen::PerformingSearch
         | CurrentScreen::PerformingReplacement
