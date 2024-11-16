@@ -28,6 +28,16 @@ cargo install scooter
 
 Scooter is available in [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=scooter).
 
+### Building from source
+
+Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run the following commands:
+
+```sh
+git clone git@github.com:thomasschafer/scooter.git
+cd scooter
+cargo install --path .
+```
+
 ## Usage
 
 Run `scooter` in a terminal to launch Scooter. You can then enter some text to search with and text to replace matches with, toggle on or off fixed strings, and enter a regex pattern that filenames must match. A more extensive set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
