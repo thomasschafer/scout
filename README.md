@@ -18,7 +18,7 @@ You can add capture groups to the search regex and use them in the replacement s
 
 ### Cargo
 
-Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), and then run
+Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run:
 
 ```sh
 cargo install scooter
@@ -26,12 +26,18 @@ cargo install scooter
 
 ### Building from source
 
-Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then pull down the repo and run
+Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run the following commands:
 
 ```sh
+git clone git@github.com:thomasschafer/scooter.git
+cd scooter
 cargo install --path .
 ```
 
 ## Usage
 
 Run `scooter` in a terminal to launch Scooter. You can then enter some text to search with and text to replace matches with, toggle on or off fixed strings, and enter a regex pattern that filenames must match. A more extensive set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
+
+## Contributing
+
+Contributions are very welcome! I'd be especially grateful for any contributions to add scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.
