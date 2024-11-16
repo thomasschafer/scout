@@ -7,11 +7,14 @@ use ratatui::{
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
-use similar::{ChangeTag, TextDiff};
+use similar::{Change, ChangeTag, TextDiff};
 use std::{cmp::min, iter};
 
-use crate::app::{
-    App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+use crate::{
+    app::{
+        App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+    },
+    utils::group_by,
 };
 
 impl FieldName {
@@ -64,13 +67,12 @@ pub struct Diff {
     pub bg_colour: Color,
 }
 
-fn diff_to_line<'a>(diff: Vec<Diff>) -> Line<'a> {
-    let spans = diff
-        .into_iter()
-        .map(|d| Span::styled(d.text, Style::new().fg(d.fg_colour).bg(d.bg_colour)))
-        .collect::<Vec<_>>();
-
-    Line::from(spans)
+fn diff_to_line(diff: Vec<Diff>) -> Line<'static> {
+    let diff_iter = diff.into_iter().map(|d| {
+        let style = Style::new().fg(d.fg_colour).bg(d.bg_colour);
+        Span::styled(d.text, style)
+    });
+    Line::from_iter(diff_iter)
 }
 
 pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Diff>) {
@@ -90,30 +92,32 @@ pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Di
         bg_colour: Color::Reset,
     }];
 
-    for change in diff.iter_all_changes() {
-        match change.tag() {
+    for change_group in group_by(diff.iter_all_changes(), |c1, c2| c1.tag() == c2.tag()) {
+        let first_change = change_group.first().unwrap(); // group_by should never return an empty group
+        let text = change_group.iter().map(Change::value).collect();
+        match first_change.tag() {
             ChangeTag::Delete => {
                 old_spans.push(Diff {
-                    text: change.value().to_owned(),
+                    text,
                     fg_colour: Color::Black,
                     bg_colour: Color::Red,
                 });
             }
             ChangeTag::Insert => {
                 new_spans.push(Diff {
-                    text: change.value().to_owned(),
+                    text,
                     fg_colour: Color::Black,
                     bg_colour: Color::Green,
                 });
             }
             ChangeTag::Equal => {
                 old_spans.push(Diff {
-                    text: change.value().to_owned(),
+                    text: text.clone(),
                     fg_colour: Color::Red,
                     bg_colour: Color::Reset,
                 });
                 new_spans.push(Diff {
-                    text: change.value().to_owned(),
+                    text,
                     fg_colour: Color::Green,
                     bg_colour: Color::Reset,
                 });
