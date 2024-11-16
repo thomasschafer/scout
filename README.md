@@ -24,6 +24,22 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 cargo install scooter
 ```
 
+### NixOS
+
+Nix-shell (temporary)
+
+```
+nix-shell -p scooter
+```
+
+NixOS configuration
+
+```
+  environment.systemPackages = [
+    pkgs.scooter
+  ];
+```
+
 ### Building from source
 
 Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run the following commands:
