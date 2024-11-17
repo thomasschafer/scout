@@ -1,6 +1,6 @@
 use ignore::WalkBuilder;
 use itertools::Itertools;
-use log::{error, info};
+use log::{info, warn};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 use tokio::sync::mpsc;
@@ -294,6 +294,8 @@ pub struct App {
     pub event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
+const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
+
 impl App {
     pub fn new(directory: Option<PathBuf>, event_sender: mpsc::UnboundedSender<AppEvent>) -> App {
         let directory = match directory {
@@ -489,6 +491,10 @@ impl App {
             .collect();
 
         for path in paths {
+            if self.ignore_file(&path) {
+                continue;
+            }
+
             match File::open(path.clone()) {
                 Ok(file) => {
                     let reader = BufReader::new(file);
@@ -506,13 +512,13 @@ impl App {
                                 };
                             }
                             Err(err) => {
-                                error!("Error opening file {:?}: {err}", path);
+                                warn!("Error retrieving line {} of {:?}: {err}", line_number, path);
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    error!("Error opening file {:?}: {err}", path);
+                    warn!("Error opening file {:?}: {err}", path);
                 }
             }
         }
@@ -656,5 +662,16 @@ impl App {
             .into_string()
             .expect("Failed to display path");
         replace_start(path, current_dir, ".")
+    }
+
+    fn ignore_file(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            if let Some(ext_str) = ext.to_str() {
+                if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }
