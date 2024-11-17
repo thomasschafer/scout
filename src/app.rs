@@ -1,6 +1,6 @@
 use ignore::WalkBuilder;
 use itertools::Itertools;
-use log::{error, info};
+use log::{info, warn};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 use tokio::sync::mpsc;
@@ -245,7 +245,7 @@ impl SearchFields {
     pub fn with_values(
         search: impl Into<String>,
         replace: impl Into<String>,
-        checked: bool,
+        fixed_strings: bool,
         filname_pattern: impl Into<String>,
     ) -> Self {
         Self {
@@ -260,7 +260,7 @@ impl SearchFields {
                 },
                 SearchField {
                     name: FieldName::FixedStrings,
-                    field: Rc::new(RefCell::new(Field::checkbox(checked))),
+                    field: Rc::new(RefCell::new(Field::checkbox(fixed_strings))),
                 },
                 SearchField {
                     name: FieldName::FilenamePattern,
@@ -293,6 +293,8 @@ pub struct App {
     pub running: bool,
     pub event_sender: mpsc::UnboundedSender<AppEvent>,
 }
+
+const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
 
 impl App {
     pub fn new(directory: Option<PathBuf>, event_sender: mpsc::UnboundedSender<AppEvent>) -> App {
@@ -441,6 +443,7 @@ impl App {
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
+        println!("ALOG:: in update_search_results");
         let pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
@@ -482,9 +485,13 @@ impl App {
             .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
             .filter(|path| {
-                patt.as_ref().map_or(true, |p| {
-                    p.is_match(self.relative_path(path.clone()).as_str())
-                })
+                if self.ignore_file(path) {
+                    return false;
+                }
+                match patt.as_ref() {
+                    Some(p) => p.is_match(self.relative_path(path.clone()).as_str()),
+                    None => true,
+                }
             })
             .collect();
 
@@ -506,13 +513,13 @@ impl App {
                                 };
                             }
                             Err(err) => {
-                                error!("Error opening file {:?}: {err}", path);
+                                warn!("Error retrieving line {} of {:?}: {err}", line_number, path);
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    error!("Error opening file {:?}: {err}", path);
+                    warn!("Error opening file {:?}: {err}", path);
                 }
             }
         }
@@ -656,5 +663,18 @@ impl App {
             .into_string()
             .expect("Failed to display path");
         replace_start(path, current_dir, ".")
+    }
+
+    fn ignore_file(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            if let Some(ext_str) = ext.to_str() {
+                if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
+                    println!("ALOG:: ignore_file {:?}, true", path);
+                    return true;
+                }
+            }
+        }
+        println!("ALOG:: ignore_file {:?}, false", path);
+        false
     }
 }

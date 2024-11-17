@@ -3,7 +3,7 @@ use scooter::{
     App, CurrentScreen, EventHandler, ReplaceResult, ReplaceState, Results, SearchFields,
     SearchResult, SearchState,
 };
-use std::fs::{self, create_dir_all, File};
+use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -281,12 +281,6 @@ fn setup_env_files_in_dirs() -> App {
         }
     };
 
-    for dir in fs::read_dir(temp_dir.path()).unwrap() {
-        for path in fs::read_dir(dir.unwrap().path()).unwrap() {
-            println!("Name: {}", path.unwrap().path().display())
-        }
-    }
-
     let events = EventHandler::new();
     App::new(Some(temp_dir.into_path()), events.app_event_sender)
 }
@@ -308,7 +302,6 @@ async fn test_update_search_results_filtered_dir() {
             (Path::new("dir2").join("file2.txt"), 1),
             (Path::new("dir2").join("file3.txt"), 1),
         ] {
-            println!("Results: {:?}", search_state.results);
             assert_eq!(
                 search_state
                     .results
@@ -331,6 +324,64 @@ async fn test_update_search_results_filtered_dir() {
     }
 }
 
+fn setup_env_files_with_gif() -> App {
+    let temp_dir = TempDir::new().unwrap();
+
+    create_test_files! {
+        temp_dir,
+        "dir1/file1.txt" => {
+            "This is a text file",
+        },
+        "dir2/file2.gif" => {
+            "This is a gif file",
+        },
+        "file3.txt" => {
+            "This is a text file",
+        }
+    };
+
+    let events = EventHandler::new();
+    App::new(Some(temp_dir.into_path()), events.app_event_sender)
+}
+
+#[tokio::test]
+async fn test_ignores_gif_file() {
+    let mut app = setup_env_files_with_gif();
+
+    app.search_fields = SearchFields::with_values(r"is", "", false, "");
+
+    let result = app.update_search_results();
+    assert!(result.is_ok());
+
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
+        assert_eq!(search_state.results.len(), 2);
+
+        for (file_path, num_matches) in [
+            (Path::new("dir1").join("file1.txt"), 1),
+            (Path::new("dir2").join("file2.gif"), 0),
+            (Path::new("file3.txt").to_path_buf(), 1),
+        ] {
+            assert_eq!(
+                search_state
+                    .results
+                    .iter()
+                    .filter(|result| {
+                        let result_path = result.path.to_str().unwrap();
+                        let file_path = file_path.to_str().unwrap();
+                        result_path.contains(file_path)
+                    })
+                    .count(),
+                num_matches
+            );
+        }
+
+        for result in &search_state.results {
+            assert_eq!(result.replacement, "Th  a text file");
+        }
+    } else {
+        panic!("Expected SearchComplete results");
+    }
+}
 // TODO: add tests for:
 // - replacing in files
 // - more tests for passing in directory via CLI arg
