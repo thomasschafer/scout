@@ -245,7 +245,7 @@ impl SearchFields {
     pub fn with_values(
         search: impl Into<String>,
         replace: impl Into<String>,
-        checked: bool,
+        fixed_strings: bool,
         filname_pattern: impl Into<String>,
     ) -> Self {
         Self {
@@ -260,7 +260,7 @@ impl SearchFields {
                 },
                 SearchField {
                     name: FieldName::FixedStrings,
-                    field: Rc::new(RefCell::new(Field::checkbox(checked))),
+                    field: Rc::new(RefCell::new(Field::checkbox(fixed_strings))),
                 },
                 SearchField {
                     name: FieldName::FilenamePattern,
@@ -443,6 +443,7 @@ impl App {
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
+        println!("ALOG:: in update_search_results");
         let pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
@@ -484,17 +485,17 @@ impl App {
             .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
             .filter(|path| {
-                patt.as_ref().map_or(true, |p| {
-                    p.is_match(self.relative_path(path.clone()).as_str())
-                })
+                if self.ignore_file(path) {
+                    return false;
+                }
+                match patt.as_ref() {
+                    Some(p) => p.is_match(self.relative_path(path.clone()).as_str()),
+                    None => true,
+                }
             })
             .collect();
 
         for path in paths {
-            if self.ignore_file(&path) {
-                continue;
-            }
-
             match File::open(path.clone()) {
                 Ok(file) => {
                     let reader = BufReader::new(file);
@@ -668,10 +669,12 @@ impl App {
         if let Some(ext) = path.extension() {
             if let Some(ext_str) = ext.to_str() {
                 if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
+                    println!("ALOG:: ignore_file {:?}, true", path);
                     return true;
                 }
             }
         }
+        println!("ALOG:: ignore_file {:?}, false", path);
         false
     }
 }
