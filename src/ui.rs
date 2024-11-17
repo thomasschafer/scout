@@ -149,10 +149,15 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
         num_results_area,
     );
 
-    let results_iter = complete_state.results.iter().enumerate().skip(min(
-        complete_state.selected.saturating_sub(midpoint),
-        num_results.saturating_sub(list_area_height / item_height),
-    ));
+    let results_iter = complete_state
+        .results
+        .iter()
+        .enumerate()
+        .skip(min(
+            complete_state.selected.saturating_sub(midpoint),
+            num_results.saturating_sub(list_area_height / item_height),
+        ))
+        .take(list_area_height / item_height + 1); // We shouldn't need the +1, but let's keep it in to ensure we have buffer when rendering
 
     let search_results = results_iter.flat_map(|(idx, result)| {
         let (old_line, new_line) = line_diff(result.line.as_str(), result.replacement.as_str());
