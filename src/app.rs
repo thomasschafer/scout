@@ -443,7 +443,6 @@ impl App {
     }
 
     pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
-        println!("ALOG:: in update_search_results");
         let pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
@@ -669,12 +668,10 @@ impl App {
         if let Some(ext) = path.extension() {
             if let Some(ext_str) = ext.to_str() {
                 if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
-                    println!("ALOG:: ignore_file {:?}, true", path);
                     return true;
                 }
             }
         }
-        println!("ALOG:: ignore_file {:?}, false", path);
         false
     }
 }
