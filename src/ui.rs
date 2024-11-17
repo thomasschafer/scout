@@ -1,16 +1,20 @@
-use std::{cmp::min, iter};
-
 use itertools::Itertools;
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
+    layout::Constraint,
+    layout::{Alignment, Direction, Flex, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span, Text},
     widgets::{Block, List, ListItem, Paragraph},
     Frame,
 };
+use similar::{Change, ChangeTag, TextDiff};
+use std::{cmp::min, iter};
 
-use crate::app::{
-    App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+use crate::{
+    app::{
+        App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+    },
+    utils::group_by,
 };
 
 impl FieldName {
@@ -56,6 +60,74 @@ fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Diff {
+    pub text: String,
+    pub fg_colour: Color,
+    pub bg_colour: Color,
+}
+
+fn diff_to_line(diff: Vec<Diff>) -> Line<'static> {
+    let diff_iter = diff.into_iter().map(|d| {
+        let style = Style::new().fg(d.fg_colour).bg(d.bg_colour);
+        Span::styled(d.text, style)
+    });
+    Line::from_iter(diff_iter)
+}
+
+pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Diff>) {
+    let diff = TextDiff::configure()
+        .algorithm(similar::Algorithm::Myers)
+        .timeout(std::time::Duration::from_millis(100))
+        .diff_chars(old_line, new_line);
+
+    let mut old_spans = vec![Diff {
+        text: "- ".to_owned(),
+        fg_colour: Color::Red,
+        bg_colour: Color::Reset,
+    }];
+    let mut new_spans = vec![Diff {
+        text: "+ ".to_owned(),
+        fg_colour: Color::Green,
+        bg_colour: Color::Reset,
+    }];
+
+    for change_group in group_by(diff.iter_all_changes(), |c1, c2| c1.tag() == c2.tag()) {
+        let first_change = change_group.first().unwrap(); // group_by should never return an empty group
+        let text = change_group.iter().map(Change::value).collect();
+        match first_change.tag() {
+            ChangeTag::Delete => {
+                old_spans.push(Diff {
+                    text,
+                    fg_colour: Color::Black,
+                    bg_colour: Color::Red,
+                });
+            }
+            ChangeTag::Insert => {
+                new_spans.push(Diff {
+                    text,
+                    fg_colour: Color::Black,
+                    bg_colour: Color::Green,
+                });
+            }
+            ChangeTag::Equal => {
+                old_spans.push(Diff {
+                    text: text.clone(),
+                    fg_colour: Color::Red,
+                    bg_colour: Color::Reset,
+                });
+                new_spans.push(Diff {
+                    text,
+                    fg_colour: Color::Green,
+                    bg_colour: Color::Reset,
+                });
+            }
+        };
+    }
+
+    (old_spans, new_spans)
+}
+
 fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
@@ -83,32 +155,30 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     ));
 
     let search_results = results_iter.flat_map(|(idx, result)| {
+        let (old_line, new_line) = line_diff(result.line.as_str(), result.replacement.as_str());
+
+        let file_path = format!(
+            "[{}] {}:{}",
+            if result.included { 'x' } else { ' ' },
+            app.relative_path(result.path.clone()),
+            result.line_number
+        );
+        let file_path_style = if complete_state.selected == idx {
+            Style::new().bg(if result.included {
+                Color::Blue
+            } else {
+                Color::Red
+            })
+        } else {
+            Style::new()
+        };
+
         [
-            (
-                format!(
-                    "[{}] {}:{}",
-                    if result.included { 'x' } else { ' ' },
-                    app.relative_path(result.path.clone()),
-                    result.line_number
-                ),
-                Style::default().bg(if complete_state.selected == idx {
-                    if result.included {
-                        Color::Blue
-                    } else {
-                        Color::Red
-                    }
-                } else {
-                    Color::Reset
-                }),
-            ),
-            (result.line.to_owned(), Style::default().fg(Color::Red)),
-            (
-                result.replacement.to_owned(),
-                Style::default().fg(Color::Green),
-            ),
-            ("".to_owned(), Style::default()),
+            ListItem::new(Text::styled(file_path, file_path_style)),
+            ListItem::new(diff_to_line(old_line)),
+            ListItem::new(diff_to_line(new_line)),
+            ListItem::new(""),
         ]
-        .map(|(s, style)| ListItem::new(Text::styled(s, style)))
     });
 
     frame.render_widget(List::new(search_results), list_area);
