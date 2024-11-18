@@ -327,7 +327,7 @@ pub fn render(app: &App, frame: &mut Frame) {
 
         CurrentScreen::Confirmation => {
             vec![
-                "<enter> search",
+                "<enter> replace",
                 "<space> toggle",
                 "<j> down",
                 "<k> up",
