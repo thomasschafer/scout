@@ -24,6 +24,19 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 cargo install scooter
 ```
 
+### Prebuilt binaries
+
+You can download binaries from the releases page (note that you'll need to unzip after downloading):
+
+- **Linux**
+  - Intel/AMD: `*-x86_64-unknown-linux-musl.tar.gz`
+  - ARM64: `*-aarch64-unknown-linux-musl.tar.gz`
+- **macOS**
+  - Apple Silicon: `*-aarch64-apple-darwin.tar.gz`
+  - Intel: `*-x86_64-apple-darwin.tar.gz`
+- **Windows**
+  - `*-x86_64-pc-windows-msvc.zip`
+
 ### Building from source
 
 Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/getting-started/installation.html)), then run the following commands:

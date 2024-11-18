@@ -4,6 +4,11 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, str::FromStr};
 use tui::Tui;
 
+use crate::{
+    app::App,
+    event::{Event, EventHandler},
+};
+
 mod app;
 mod event;
 mod fields;
@@ -11,13 +16,10 @@ mod logging;
 mod tui;
 mod ui;
 mod utils;
-use crate::{
-    app::App,
-    event::{Event, EventHandler},
-};
 
 #[derive(Parser, Debug)]
 #[command(about = "Interactive find and replace TUI.")]
+#[command(version)]
 struct Args {
     /// Directory in which to search
     #[arg(index = 1)]
