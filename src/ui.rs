@@ -193,18 +193,50 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
-    let [success_area, ignored_area, errors_area, list_title_area, list_area] = Layout::vertical([
+
+    if app.results.replace_complete().errors.is_empty() {
+        render_results_success(area, app, frame);
+    } else {
+        render_results_errors(area, app, frame);
+    }
+}
+
+const ERROR_ITEM_HEIGHT: u16 = 3;
+const NUM_TALLIES: usize = 3;
+
+fn render_results_success(area: Rect, app: &App, frame: &mut Frame<'_>) {
+    let [_, success_title_area, results_area, _] = Layout::vertical([
+        Constraint::Fill(1),
         Constraint::Length(3),
-        Constraint::Length(3),
-        Constraint::Length(3),
+        Constraint::Length(ERROR_ITEM_HEIGHT * NUM_TALLIES as u16), // TODO: find a better way of doing this
+        Constraint::Fill(1),
+    ])
+    .flex(Flex::Start)
+    .areas(area);
+
+    render_results_tallies(results_area, frame, app);
+
+    let text = "Success!";
+    let area = center(
+        success_title_area,
+        Constraint::Length(text.len() as u16), // TODO: find a better way of doing this
+        Constraint::Length(1),
+    );
+    frame.render_widget(Text::raw(text), area);
+}
+
+fn render_results_errors(area: Rect, app: &App, frame: &mut Frame<'_>) {
+    let [results_area, list_title_area, list_area] = Layout::vertical([
+        Constraint::Length(ERROR_ITEM_HEIGHT * NUM_TALLIES as u16), // TODO: find a better way of doing this
         Constraint::Length(1),
         Constraint::Fill(1),
     ])
     .flex(Flex::Start)
     .areas(area);
 
-    let replace_results = app.results.replace_complete();
-    let errors = replace_results
+    let errors = app
+        .results
+        .replace_complete()
         .errors
         .iter()
         .map(|res| {
@@ -219,38 +251,52 @@ fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
                 },
             )
         })
-        .collect::<Vec<_>>();
+        .skip(app.results.replace_complete().replacement_errors_pos)
+        .take(list_area.height as usize / 3 + 1); // TODO: don't hardcode height
 
-    [
+    render_results_tallies(results_area, frame, app);
+
+    frame.render_widget(Text::raw("Errors:"), list_title_area);
+    frame.render_widget(List::new(errors.flatten()), list_area);
+}
+
+fn render_results_tallies(results_area: Rect, frame: &mut Frame<'_>, app: &App) {
+    let replace_results = app.results.replace_complete();
+
+    let [success_area, ignored_area, errors_area] = Layout::vertical([
+        Constraint::Length(3),
+        Constraint::Length(3),
+        Constraint::Length(3),
+    ])
+    .flex(Flex::Start)
+    .areas(results_area);
+    let widgets: [_; NUM_TALLIES] = [
         (
-            replace_results.num_successes,
             "Successful replacements:",
+            replace_results.num_successes,
             success_area,
         ),
-        (replace_results.num_ignored, "Ignored:", ignored_area),
-        (errors.len(), "Errors:", errors_area),
-    ]
-    .iter()
-    .for_each(|(num, title, area)| {
-        frame.render_widget(
+        ("Ignored:", replace_results.num_ignored, ignored_area),
+        ("Errors:", replace_results.errors.len(), errors_area),
+    ];
+    let widgets = widgets.into_iter().map(|(title, num, area)| {
+        (
             Paragraph::new(num.to_string())
-                .block(Block::bordered().border_style(Style::new()).title(*title)),
-            *area,
-        );
+                .block(Block::bordered().border_style(Style::new()).title(title)),
+            area,
+        )
     });
+    widgets.for_each(|(widget, area)| {
+        frame.render_widget(widget, area);
+    });
+}
 
-    if !errors.is_empty() {
-        frame.render_widget(Text::raw("Errors:"), list_title_area);
-        frame.render_widget(
-            List::new(
-                errors
-                    .into_iter()
-                    .skip(app.results.replace_complete().replacement_errors_pos)
-                    .flatten(),
-            ),
-            list_area,
-        );
-    };
+fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
+    let [area] = Layout::horizontal([horizontal])
+        .flex(Flex::Center)
+        .areas(area);
+    let [area] = Layout::vertical([vertical]).flex(Flex::Center).areas(area);
+    area
 }
 
 fn render_loading_view(text: String) -> impl Fn(&mut Frame, &App, Rect) {
