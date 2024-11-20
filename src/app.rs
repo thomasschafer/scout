@@ -284,6 +284,7 @@ pub struct App {
     pub search_fields: SearchFields,
     pub results: Results,
     pub directory: PathBuf,
+    pub include_hidden: bool,
 
     pub running: bool,
     pub event_sender: mpsc::UnboundedSender<AppEvent>,
@@ -292,7 +293,11 @@ pub struct App {
 const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
 
 impl App {
-    pub fn new(directory: Option<PathBuf>, event_sender: mpsc::UnboundedSender<AppEvent>) -> App {
+    pub fn new(
+        directory: Option<PathBuf>,
+        include_hidden: bool,
+        event_sender: mpsc::UnboundedSender<AppEvent>,
+    ) -> App {
         let directory = match directory {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
@@ -303,6 +308,7 @@ impl App {
             search_fields: SearchFields::with_values("", "", false, ""),
             results: Results::Loading,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
+            include_hidden,
 
             running: true,
             event_sender,
@@ -310,7 +316,11 @@ impl App {
     }
 
     pub fn reset(&mut self) {
-        *self = Self::new(Some(self.directory.clone()), self.event_sender.clone());
+        *self = Self::new(
+            Some(self.directory.clone()),
+            self.include_hidden,
+            self.event_sender.clone(),
+        );
     }
 
     pub fn handle_event(&mut self, event: AppEvent) -> bool {
@@ -473,8 +483,11 @@ impl App {
             }
         };
 
-        let paths: Vec<_> = WalkBuilder::new(&self.directory)
-            .build()
+        let walker = WalkBuilder::new(&self.directory)
+            .hidden(!self.include_hidden)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .build();
+        let paths: Vec<_> = walker
             .flatten()
             .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
