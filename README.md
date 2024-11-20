@@ -10,7 +10,7 @@ If the instance you're attempting to replace has changed since the search was pe
 
 ## Features
 
-Scooter respects both `.gitignore` and `.ignore` files.
+Scooter respects both `.gitignore` and `.ignore` files. By default hidden files (such as those starting with a `.`) are ignored, but can be included with the `--hidden` flag.
 
 You can add capture groups to the search regex and use them in the replacement string: for instance, if you use `(\d) - (\w+)` for the search text and `($2) "$1"` as the replacement, then `9 - foo` would be replaced with `(foo) "9"`.
 
@@ -69,7 +69,7 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 ```sh
 git clone git@github.com:thomasschafer/scooter.git
 cd scooter
-cargo install --path .
+cargo install --path . --locked
 ```
 
 ## Contributing

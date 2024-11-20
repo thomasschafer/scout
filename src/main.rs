@@ -24,6 +24,10 @@ struct Args {
     /// Directory in which to search
     #[arg(index = 1)]
     directory: Option<String>,
+
+    /// Include hidden files and directories, such as those whose name starts with a dot (.)
+    #[arg(short = '.', long, default_value = "false")]
+    hidden: bool,
 }
 
 #[tokio::main]
@@ -39,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     let events = EventHandler::new();
     let app_event_sender = events.app_event_sender.clone();
-    let mut app = App::new(directory, app_event_sender);
+    let mut app = App::new(directory, args.hidden, app_event_sender);
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
