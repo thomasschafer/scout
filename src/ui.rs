@@ -43,7 +43,7 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         .zip(areas)
         .enumerate()
         .for_each(|(idx, (SearchField { name, field }, field_area))| {
-            field.borrow().render(
+            field.read().unwrap().render(
                 frame,
                 field_area,
                 name.title().to_owned(),
@@ -52,7 +52,13 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         });
 
     let highlighted_area = areas[app.search_fields.highlighted];
-    if let Some(cursor_idx) = app.search_fields.highlighted_field().borrow().cursor_idx() {
+    if let Some(cursor_idx) = app
+        .search_fields
+        .highlighted_field()
+        .read()
+        .unwrap()
+        .cursor_idx()
+    {
         frame.set_cursor(
             highlighted_area.x + cursor_idx as u16 + 1,
             highlighted_area.y + 1,
@@ -165,7 +171,7 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         let file_path = format!(
             "[{}] {}:{}",
             if result.included { 'x' } else { ' ' },
-            app.relative_path(result.path.clone()),
+            app.relative_path(&result.path),
             result.line_number
         );
         let file_path_style = if complete_state.selected == idx {
@@ -353,7 +359,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
     frame.render_widget(title, chunks[0]);
 
     let render_fn: RenderFn = match app.current_screen {
-        CurrentScreen::Searching => Box::new(render_search_view),
+        CurrentScreen::Search => Box::new(render_search_view),
         CurrentScreen::PerformingSearch => {
             Box::new(render_loading_view("Performing search...".to_owned()))
         }
@@ -366,7 +372,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
     render_fn(frame, app, chunks[1]);
 
     let current_keys = match app.current_screen {
-        CurrentScreen::Searching => {
+        CurrentScreen::Search => {
             vec!["<enter> search", "<tab> focus next", "<S-tab> focus prev"]
         }
 

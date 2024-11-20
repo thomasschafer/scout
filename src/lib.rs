@@ -1,3 +1,5 @@
+#![feature(mapped_lock_guards)]
+
 pub mod app;
 pub mod event;
 pub mod fields;

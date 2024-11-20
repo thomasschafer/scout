@@ -90,7 +90,7 @@ async fn test_app_reset() {
 
     app.reset();
 
-    assert!(matches!(app.current_screen, CurrentScreen::Searching));
+    assert!(matches!(app.current_screen, CurrentScreen::Search));
     assert!(matches!(app.results, Results::Loading));
 }
 
@@ -114,7 +114,7 @@ async fn test_back_from_results() {
     assert_eq!(app.search_fields.replace().text, "bar");
     assert!(app.search_fields.fixed_strings().checked);
     assert_eq!(app.search_fields.path_pattern().text, "pattern");
-    assert_eq!(app.current_screen, CurrentScreen::Searching);
+    assert_eq!(app.current_screen, CurrentScreen::Search);
     assert_eq!(app.results, Results::Loading);
 }
 
@@ -166,7 +166,8 @@ async fn test_update_search_results_fixed_string() {
 
     app.search_fields = SearchFields::with_values(".*", "example", true, "");
 
-    app.update_search_results().unwrap();
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 1);
@@ -197,7 +198,8 @@ async fn test_update_search_results_regex() {
 
     app.search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false, "");
 
-    app.update_search_results().unwrap();
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 4);
@@ -240,7 +242,8 @@ async fn test_update_search_results_no_matches() {
 
     app.search_fields = SearchFields::with_values("nonexistent", "replacement", false, "");
 
-    app.update_search_results().unwrap();
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         assert_eq!(search_state.results.len(), 0);
@@ -255,8 +258,8 @@ async fn test_update_search_results_invalid_regex() {
 
     app.search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false, "");
 
-    let result = app.update_search_results();
-    assert!(result.is_ok());
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 }
 
 fn setup_env_files_in_dirs() -> App {
@@ -291,8 +294,8 @@ async fn test_update_search_results_filtered_dir() {
 
     app.search_fields = SearchFields::with_values(r"testing", "f", false, "dir2");
 
-    let result = app.update_search_results();
-    assert!(result.is_ok());
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         let expected_matches = [
@@ -356,8 +359,8 @@ async fn test_ignores_gif_file() {
 
     app.search_fields = SearchFields::with_values(r"is", "", false, "");
 
-    let result = app.update_search_results();
-    assert!(result.is_ok());
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         let expected_matches = [
@@ -424,8 +427,8 @@ async fn hidden_files_test_impl(include_hidden: bool) {
 
     app.search_fields = SearchFields::with_values(r"This", "bar", false, "");
 
-    let result = app.update_search_results();
-    assert!(result.is_ok());
+    let continue_to_confirmation = app.update_search_results().await.unwrap();
+    assert!(continue_to_confirmation);
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         let expected_matches = [

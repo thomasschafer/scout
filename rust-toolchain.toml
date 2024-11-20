@@ -1,0 +1,2 @@
+[toolchain]
+channel = "nightly" # Allows us to use MappedLockGuard

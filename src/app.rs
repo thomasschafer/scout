@@ -1,15 +1,18 @@
-use ignore::WalkBuilder;
+use ignore::{WalkBuilder, WalkState};
 use itertools::Itertools;
 use log::{info, warn};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
-    cell::{RefCell, RefMut},
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
+    mem,
     path::{Path, PathBuf},
-    rc::Rc,
+    sync::{
+        Arc, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
+        RwLockWriteGuard,
+    },
 };
 use tokio::sync::mpsc;
 
@@ -20,7 +23,7 @@ use crate::{
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum CurrentScreen {
-    Searching,
+    Search,
     PerformingSearch,
     Confirmation,
     PerformingReplacement,
@@ -43,9 +46,11 @@ pub struct SearchResult {
     pub replace_result: Option<ReplaceResult>,
 }
 
+type SearchResults = Vec<SearchResult>;
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
-    pub results: Vec<SearchResult>,
+    pub results: SearchResults,
     pub selected: usize, // TODO: allow for selection of ranges
 }
 
@@ -79,7 +84,7 @@ impl SearchState {
 pub struct ReplaceState {
     pub num_successes: usize,
     pub num_ignored: usize,
-    pub errors: Vec<SearchResult>,
+    pub errors: SearchResults,
     pub replacement_errors_pos: usize,
 }
 
@@ -103,6 +108,7 @@ impl ReplaceState {
 #[derive(Debug, Eq, PartialEq)]
 pub enum Results {
     Loading,
+    SearchInProgress(SearchResults),
     SearchComplete(SearchState),
     ReplaceComplete(ReplaceState),
 }
@@ -111,6 +117,7 @@ impl Results {
     fn name(&self) -> String {
         match self {
             Self::Loading => "Loading",
+            Self::SearchInProgress(_) => "SearchInProgress",
             Self::SearchComplete(_) => "SearchComplete",
             Self::ReplaceComplete(_) => "ReplaceComplete",
         }
@@ -130,6 +137,15 @@ macro_rules! complete_state_impl {
 }
 
 impl Results {
+    #[allow(dead_code)]
+    pub fn searching(&self) -> &SearchResults {
+        complete_state_impl!(self, SearchInProgress)
+    }
+
+    pub fn searching_mut(&mut self) -> &mut SearchResults {
+        complete_state_impl!(self, SearchInProgress)
+    }
+
     pub fn search_complete(&self) -> &SearchState {
         complete_state_impl!(self, SearchComplete)
     }
@@ -157,41 +173,68 @@ pub enum FieldName {
 
 pub struct SearchField {
     pub name: FieldName,
-    pub field: Rc<RefCell<Field>>,
+    pub field: Arc<RwLock<Field>>,
 }
 
 impl SearchField {
-    #[allow(dead_code)] // TODO: use
-    fn set_error(&mut self, error: String) {
-        self.field.borrow_mut().set_error(error);
+    #[allow(dead_code)]
+    fn set_error(
+        &mut self,
+        error: String,
+    ) -> Result<(), std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, Field>>> {
+        self.field.write().map(|mut field| field.set_error(error))
     }
 }
 
-pub const NUM_SEARCH_FIELDS: usize = 4; // needed because Ratatui .areas method returns an array
+pub const NUM_SEARCH_FIELDS: usize = 4;
 
 pub struct SearchFields {
     pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
 }
 
-// TODO: add non-mutable versions
 macro_rules! define_field_accessor {
     ($method_name:ident, $field_name:expr, $field_variant:ident, $return_type:ty) => {
-        pub fn $method_name(&self) -> RefMut<'_, $return_type> {
-            self.fields
+        pub fn $method_name(&self) -> MappedRwLockReadGuard<'_, $return_type> {
+            let field = self
+                .fields
                 .iter()
                 .find(|SearchField { name, .. }| *name == $field_name)
-                .and_then(|SearchField { field, .. }| {
-                    RefMut::filter_map(field.borrow_mut(), |f| {
-                        if let Field::$field_variant(inner) = f {
-                            Some(inner)
-                        } else {
-                            None
-                        }
-                    })
-                    .ok()
-                })
-                .expect("Couldn't find field")
+                .expect("Couldn't find field");
+
+            RwLockReadGuard::map(
+                field.field.read().expect("Failed to acquire read lock"),
+                |f| {
+                    if let Field::$field_variant(ref inner) = f {
+                        inner
+                    } else {
+                        panic!("Incorrect field type")
+                    }
+                },
+            )
+        }
+    };
+}
+
+macro_rules! define_field_accessor_mut {
+    ($method_name:ident, $field_name:expr, $field_variant:ident, $return_type:ty) => {
+        pub fn $method_name(&self) -> MappedRwLockWriteGuard<'_, $return_type> {
+            let field = self
+                .fields
+                .iter()
+                .find(|SearchField { name, .. }| *name == $field_name)
+                .expect("Couldn't find field");
+
+            RwLockWriteGuard::map(
+                field.field.write().expect("Failed to acquire write lock"),
+                |f| {
+                    if let Field::$field_variant(ref mut inner) = f {
+                        inner
+                    } else {
+                        panic!("Incorrect field type")
+                    }
+                },
+            )
         }
     };
 }
@@ -207,6 +250,42 @@ impl SearchFields {
     );
     define_field_accessor!(path_pattern, FieldName::PathPattern, Text, TextField);
 
+    define_field_accessor_mut!(search_mut, FieldName::Search, Text, TextField);
+    define_field_accessor_mut!(path_pattern_mut, FieldName::PathPattern, Text, TextField);
+
+    pub fn with_values(
+        search: impl Into<String>,
+        replace: impl Into<String>,
+        fixed_strings: bool,
+        filename_pattern: impl Into<String>,
+    ) -> Self {
+        Self {
+            fields: [
+                SearchField {
+                    name: FieldName::Search,
+                    field: Arc::new(RwLock::new(Field::text(search.into()))),
+                },
+                SearchField {
+                    name: FieldName::Replace,
+                    field: Arc::new(RwLock::new(Field::text(replace.into()))),
+                },
+                SearchField {
+                    name: FieldName::FixedStrings,
+                    field: Arc::new(RwLock::new(Field::checkbox(fixed_strings))),
+                },
+                SearchField {
+                    name: FieldName::PathPattern,
+                    field: Arc::new(RwLock::new(Field::text(filename_pattern.into()))),
+                },
+            ],
+            highlighted: 0,
+        }
+    }
+
+    pub fn highlighted_field(&self) -> &Arc<RwLock<Field>> {
+        &self.fields[self.highlighted].field
+    }
+
     pub fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
     }
@@ -216,8 +295,17 @@ impl SearchFields {
             (self.highlighted + self.fields.len().saturating_sub(1)) % self.fields.len();
     }
 
-    pub fn highlighted_field(&self) -> &Rc<RefCell<Field>> {
-        &self.fields[self.highlighted].field
+    pub fn clear_errors(&mut self) {
+        self.fields
+            .iter_mut()
+            .try_for_each(|field| {
+                field
+                    .field
+                    .write()
+                    .map(|mut f| f.clear_error())
+                    .map_err(|e| format!("Failed to clear error: {}", e))
+            })
+            .expect("Failed to clear field errors");
     }
 
     pub fn search_type(&self) -> anyhow::Result<SearchType> {
@@ -229,41 +317,6 @@ impl SearchFields {
             SearchType::Pattern(Regex::new(&search_text)?)
         };
         Ok(result)
-    }
-
-    pub fn clear_errors(&mut self) {
-        self.fields.iter().for_each(|field| {
-            field.field.borrow_mut().clear_error();
-        });
-    }
-
-    pub fn with_values(
-        search: impl Into<String>,
-        replace: impl Into<String>,
-        fixed_strings: bool,
-        filname_pattern: impl Into<String>,
-    ) -> Self {
-        Self {
-            fields: [
-                SearchField {
-                    name: FieldName::Search,
-                    field: Rc::new(RefCell::new(Field::text(search.into()))),
-                },
-                SearchField {
-                    name: FieldName::Replace,
-                    field: Rc::new(RefCell::new(Field::text(replace.into()))),
-                },
-                SearchField {
-                    name: FieldName::FixedStrings,
-                    field: Rc::new(RefCell::new(Field::checkbox(fixed_strings))),
-                },
-                SearchField {
-                    name: FieldName::PathPattern,
-                    field: Rc::new(RefCell::new(Field::text(filname_pattern.into()))),
-                },
-            ],
-            highlighted: 0,
-        }
     }
 }
 
@@ -304,7 +357,7 @@ impl App {
         };
 
         App {
-            current_screen: CurrentScreen::Searching,
+            current_screen: CurrentScreen::Search,
             search_fields: SearchFields::with_values("", "", false, ""),
             results: Results::Loading,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
@@ -323,17 +376,18 @@ impl App {
         );
     }
 
-    pub fn handle_event(&mut self, event: AppEvent) -> bool {
+    pub async fn handle_event(&mut self, event: AppEvent) -> bool {
         match event {
             AppEvent::Rerender => {}
             AppEvent::PerformSearch => {
                 let continue_to_confirmation = self
                     .update_search_results()
+                    .await
                     .expect("Failed to unwrap search results");
                 self.current_screen = if continue_to_confirmation {
                     CurrentScreen::Confirmation
                 } else {
-                    CurrentScreen::Searching
+                    CurrentScreen::Search
                 };
                 self.event_sender.send(AppEvent::Rerender).unwrap();
             }
@@ -362,7 +416,8 @@ impl App {
             (code, modifiers) => {
                 self.search_fields
                     .highlighted_field()
-                    .borrow_mut()
+                    .write()
+                    .unwrap()
                     .handle_keys(code, modifiers);
             }
         };
@@ -390,7 +445,7 @@ impl App {
                     .unwrap();
             }
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
-                self.current_screen = CurrentScreen::Searching;
+                self.current_screen = CurrentScreen::Search;
                 self.event_sender.send(AppEvent::Rerender).unwrap();
             }
             _ => {}
@@ -439,7 +494,7 @@ impl App {
         }
 
         let exit = match self.current_screen {
-            CurrentScreen::Searching => self.handle_key_searching(key),
+            CurrentScreen::Search => self.handle_key_searching(key),
             CurrentScreen::Confirmation => self.handle_key_confirmation(key),
             CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => false,
             CurrentScreen::Results => self.handle_key_results(key),
@@ -447,13 +502,42 @@ impl App {
         Ok(exit)
     }
 
-    pub fn update_search_results(&mut self) -> anyhow::Result<bool> {
+    fn handle_path(&mut self, path: &Path, pattern: &SearchType) {
+        match File::open(path) {
+            Ok(file) => {
+                let reader = BufReader::new(file);
+
+                for (line_number, line) in reader.lines().enumerate() {
+                    match line {
+                        Ok(line) => {
+                            if let Some(result) = self.replacement_if_match(
+                                pattern,
+                                line,
+                                path.to_path_buf(),
+                                line_number,
+                            ) {
+                                self.results.searching_mut().push(result);
+                            }
+                        }
+                        Err(err) => {
+                            warn!("Error retrieving line {} of {:?}: {err}", line_number, path);
+                        }
+                    }
+                }
+            }
+            Err(err) => {
+                warn!("Error opening file {:?}: {err}", path);
+            }
+        }
+    }
+
+    pub async fn update_search_results(&mut self) -> anyhow::Result<bool> {
         let pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
                     info!("Error when parsing search regex {}", e);
                     self.search_fields
-                        .search()
+                        .search_mut()
                         .set_error("Couldn't parse regex".to_owned());
                     return Ok(false);
                 } else {
@@ -463,19 +547,15 @@ impl App {
             Ok(p) => p,
         };
 
-        self.current_screen = CurrentScreen::Confirmation;
-
-        let mut results = vec![];
-
-        let s = self.search_fields.path_pattern().text();
-        let patt = if s.is_empty() {
+        let path_pattern_text = self.search_fields.path_pattern().text();
+        let path_pattern = if path_pattern_text.is_empty() {
             None
         } else {
-            match Regex::new(s.as_str()) {
+            match Regex::new(path_pattern_text.as_str()) {
                 Err(e) => {
                     info!("Error when parsing filname pattern regex {}", e);
                     self.search_fields
-                        .path_pattern()
+                        .path_pattern_mut()
                         .set_error("Couldn't parse regex".to_owned());
                     return Ok(false);
                 }
@@ -483,58 +563,56 @@ impl App {
             }
         };
 
+        let current_dir = self.directory.clone();
+
         let walker = WalkBuilder::new(&self.directory)
             .hidden(!self.include_hidden)
             .filter_entry(|entry| entry.file_name() != ".git")
-            .build();
-        let paths: Vec<_> = walker
-            .flatten()
-            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
-            .map(|entry| entry.path().to_path_buf())
-            .filter(|path| {
-                if self.ignore_file(path) {
-                    return false;
-                }
-                match patt.as_ref() {
-                    Some(p) => p.is_match(self.relative_path(path.clone()).as_str()),
-                    None => true,
-                }
-            })
-            .collect();
+            .build_parallel();
 
-        for path in paths {
-            match File::open(path.clone()) {
-                Ok(file) => {
-                    let reader = BufReader::new(file);
+        self.results = Results::SearchInProgress(vec![]);
 
-                    for (line_number, line) in reader.lines().enumerate() {
-                        match line {
-                            Ok(line) => {
-                                if let Some(res) = self.replacement_if_match(
-                                    &pattern,
-                                    line,
-                                    path.clone(),
-                                    line_number,
-                                ) {
-                                    results.push(res);
-                                };
-                            }
-                            Err(err) => {
-                                warn!("Error retrieving line {} of {:?}: {err}", line_number, path);
-                            }
-                        }
+        let (sender, mut receiver) = mpsc::unbounded_channel::<PathBuf>();
+
+        walker.run(|| {
+            Box::new(|entry| {
+                let entry = match entry {
+                    Ok(entry) => entry,
+                    Err(_) => return WalkState::Continue, // TODO handle errors
+                };
+                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                    return WalkState::Continue;
+                };
+                if Self::ignore_file(entry.path()) {
+                    return WalkState::Continue;
+                }
+                if let Some(p) = path_pattern.as_ref() {
+                    let matches_pattern =
+                        p.is_match(Self::relative_path_impl(&current_dir, entry.path()).as_str());
+                    if !matches_pattern {
+                        return WalkState::Continue;
                     }
                 }
-                Err(err) => {
-                    warn!("Error opening file {:?}: {err}", path);
-                }
-            }
+                sender.send(entry.path().to_path_buf()).unwrap();
+                WalkState::Continue
+            })
+        });
+
+        while let Some(path) = receiver.recv().await {
+            self.handle_path(&path, &pattern);
         }
 
-        self.results = Results::SearchComplete(SearchState {
-            results,
-            selected: 0,
-        });
+        match mem::replace(&mut self.results, Results::Loading) {
+            Results::SearchInProgress(results) => {
+                self.results = Results::SearchComplete(SearchState {
+                    results,
+                    selected: 0,
+                });
+            }
+            _ => {
+                panic!("Expected SearchInProgress");
+            }
+        }
 
         Ok(true)
     }
@@ -663,16 +741,17 @@ impl App {
         Ok(())
     }
 
-    pub fn relative_path(self: &App, path: PathBuf) -> String {
-        let current_dir = self.directory.to_str().unwrap();
-        let path = path
-            .into_os_string()
-            .into_string()
-            .expect("Failed to display path");
+    pub fn relative_path(self: &App, path: &Path) -> String {
+        Self::relative_path_impl(&self.directory, path)
+    }
+
+    fn relative_path_impl(directory: &Path, path: &Path) -> String {
+        let current_dir = directory.to_str().unwrap();
+        let path = path.to_str().expect("Failed to display path").to_owned();
         replace_start(path, current_dir, ".")
     }
 
-    fn ignore_file(&self, path: &Path) -> bool {
+    fn ignore_file(path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             if let Some(ext_str) = ext.to_str() {
                 if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {

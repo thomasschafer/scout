@@ -1,3 +1,5 @@
+#![feature(mapped_lock_guards)]
+
 use clap::Parser;
 use log::LevelFilter;
 use logging::{setup_logging, DEFAULT_LOG_LEVEL};
@@ -73,7 +75,7 @@ async fn main() -> anyhow::Result<()> {
             Event::Key(key_event) => app.handle_key_events(&key_event)?,
             Event::Mouse(_) => false,
             Event::Resize(_, _) => false,
-            Event::App(app_event) => app.handle_event(app_event),
+            Event::App(app_event) => app.handle_event(app_event).await,
         };
         if exit {
             break;
