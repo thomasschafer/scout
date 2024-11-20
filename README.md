@@ -28,7 +28,16 @@ in a terminal to launch Scooter. By default the current directory is used to sea
 scooter ../foo/bar`
 ```
 
-You can then enter some text to search with and text to replace matches with, toggle on or off fixed strings, and enter a regex pattern that filenames must match. A more extensive set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
+A set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
+
+### Search fields
+
+When on the search screen the following fields are available:
+
+- **Search text**: Text to search with. Defaults to regex, unless "Fixed strings" is enabled, in which case this reverts to case-sensitive string search.
+- **Replace text**: Text to replace the search text with. If searching with regex, this can include capture groups.
+- **Fixed strings**: If enabled, search with plain case-sensitive strings. If disabled, search with regex.
+- **Path pattern (regex)**: Regex pattern that file paths must match. The relative path of the file is matched against: for instance, if searching in `/foo/`, if the path pattern is set to `bar` then `/foo/bar.txt` and `/foo/bar/file.rs` will be included. In the same example, if the path pattern is set to `foo` then `/foo/bar.txt` will *not* be included, but `/foo/foo.txt` will be.
 
 ## Installation
 
@@ -65,4 +74,4 @@ cargo install --path .
 
 ## Contributing
 
-Contributions are very welcome! I'd be especially grateful for any contributions to add scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.
+Contributions are very welcome! I'd be especially grateful for any contributions to add Scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.

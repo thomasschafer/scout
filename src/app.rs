@@ -152,7 +152,7 @@ pub enum FieldName {
     Search,
     Replace,
     FixedStrings,
-    FilenamePattern,
+    PathPattern,
 }
 
 pub struct SearchField {
@@ -205,12 +205,7 @@ impl SearchFields {
         Checkbox,
         CheckboxField
     );
-    define_field_accessor!(
-        filename_pattern,
-        FieldName::FilenamePattern,
-        Text,
-        TextField
-    );
+    define_field_accessor!(path_pattern, FieldName::PathPattern, Text, TextField);
 
     pub fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
@@ -263,7 +258,7 @@ impl SearchFields {
                     field: Rc::new(RefCell::new(Field::checkbox(fixed_strings))),
                 },
                 SearchField {
-                    name: FieldName::FilenamePattern,
+                    name: FieldName::PathPattern,
                     field: Rc::new(RefCell::new(Field::text(filname_pattern.into()))),
                 },
             ],
@@ -462,7 +457,7 @@ impl App {
 
         let mut results = vec![];
 
-        let s = self.search_fields.filename_pattern().text();
+        let s = self.search_fields.path_pattern().text();
         let patt = if s.is_empty() {
             None
         } else {
@@ -470,7 +465,7 @@ impl App {
                 Err(e) => {
                     info!("Error when parsing filname pattern regex {}", e);
                     self.search_fields
-                        .filename_pattern()
+                        .path_pattern()
                         .set_error("Couldn't parse regex".to_owned());
                     return Ok(false);
                 }
