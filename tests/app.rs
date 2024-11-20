@@ -419,9 +419,8 @@ fn setup_env_files_with_hidden(include_hidden: bool) -> App {
     )
 }
 
-#[tokio::test]
-async fn test_ignores_hidden_files_by_default() {
-    let mut app = setup_env_files_with_hidden(false);
+async fn hidden_files_test_impl(include_hidden: bool) {
+    let mut app = setup_env_files_with_hidden(include_hidden);
 
     app.search_fields = SearchFields::with_values(r"This", "bar", false, "");
 
@@ -431,8 +430,14 @@ async fn test_ignores_hidden_files_by_default() {
     if let scooter::Results::SearchComplete(search_state) = &app.results {
         let expected_matches = [
             (Path::new("dir1").join("file1.txt"), 1),
-            (Path::new(".dir2").join("file2.rs"), 0),
-            (Path::new(".file3.txt").to_path_buf(), 0),
+            (
+                Path::new(".dir2").join("file2.rs"),
+                if include_hidden { 1 } else { 0 },
+            ),
+            (
+                Path::new(".file3.txt").to_path_buf(),
+                if include_hidden { 1 } else { 0 },
+            ),
         ];
         for (file_path, num_matches) in expected_matches.clone() {
             assert_eq!(
@@ -461,44 +466,13 @@ async fn test_ignores_hidden_files_by_default() {
 }
 
 #[tokio::test]
+async fn test_ignores_hidden_files_by_default() {
+    hidden_files_test_impl(false).await;
+}
+
+#[tokio::test]
 async fn test_includes_hidden_files_with_flag() {
-    let mut app = setup_env_files_with_hidden(true);
-
-    app.search_fields = SearchFields::with_values(r"This", "bar", false, "");
-
-    let result = app.update_search_results();
-    assert!(result.is_ok());
-
-    if let scooter::Results::SearchComplete(search_state) = &app.results {
-        let expected_matches = [
-            (Path::new("dir1").join("file1.txt"), 1),
-            (Path::new(".dir2").join("file2.rs"), 1),
-            (Path::new(".file3.txt").to_path_buf(), 1),
-        ];
-        for (file_path, num_matches) in expected_matches.clone() {
-            assert_eq!(
-                search_state
-                    .results
-                    .iter()
-                    .filter(|result| {
-                        let result_path = result.path.to_str().unwrap();
-                        let file_path = file_path.to_str().unwrap();
-                        result_path.contains(file_path)
-                    })
-                    .count(),
-                num_matches
-            );
-        }
-        assert_eq!(
-            search_state.results.len(),
-            expected_matches
-                .map(|(_, count)| count)
-                .into_iter()
-                .sum::<usize>()
-        );
-    } else {
-        panic!("Expected SearchComplete results");
-    }
+    hidden_files_test_impl(true).await;
 }
 
 // TODO:
