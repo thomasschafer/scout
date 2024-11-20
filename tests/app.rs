@@ -113,7 +113,7 @@ async fn test_back_from_results() {
     assert_eq!(app.search_fields.search().text, "foo");
     assert_eq!(app.search_fields.replace().text, "bar");
     assert!(app.search_fields.fixed_strings().checked);
-    assert_eq!(app.search_fields.filename_pattern().text, "pattern");
+    assert_eq!(app.search_fields.path_pattern().text, "pattern");
     assert_eq!(app.current_screen, CurrentScreen::Searching);
     assert_eq!(app.results, Results::Loading);
 }

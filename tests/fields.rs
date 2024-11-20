@@ -87,7 +87,7 @@ fn test_search_fields() {
                 field: Rc::new(RefCell::new(Field::checkbox(false))),
             },
             SearchField {
-                name: FieldName::FilenamePattern,
+                name: FieldName::PathPattern,
                 field: Rc::new(RefCell::new(Field::text(""))),
             },
         ],
