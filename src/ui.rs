@@ -334,9 +334,14 @@ pub fn render(app: &App, frame: &mut Frame) {
                 "<C-o> back",
             ]
         }
-        CurrentScreen::PerformingSearch
-        | CurrentScreen::PerformingReplacement
-        | CurrentScreen::Results => vec![],
+        CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => vec![],
+        CurrentScreen::Results => {
+            if !app.results.replace_complete().errors.is_empty() {
+                vec!["<j> down", "<k> up"]
+            } else {
+                vec![]
+            }
+        }
     };
     let all_keys = current_keys.iter().chain(global_keys.iter()).join(" / ");
     let keys_hint = Span::styled(all_keys, Color::default());
