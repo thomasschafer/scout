@@ -3,7 +3,7 @@ use scooter::{
     App, CurrentScreen, EventHandler, ReplaceResult, ReplaceState, Results, SearchFields,
     SearchResult, SearchState,
 };
-use std::fs::{self, create_dir_all, File};
+use std::fs::{create_dir_all, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -79,7 +79,7 @@ async fn test_replace_state() {
 #[tokio::test]
 async fn test_app_reset() {
     let events = EventHandler::new();
-    let mut app = App::new(None, events.app_event_sender);
+    let mut app = App::new(None, false, events.app_event_sender);
     app.current_screen = CurrentScreen::Results;
     app.results = Results::ReplaceComplete(ReplaceState {
         num_successes: 5,
@@ -97,7 +97,7 @@ async fn test_app_reset() {
 #[tokio::test]
 async fn test_back_from_results() {
     let events = EventHandler::new();
-    let mut app = App::new(None, events.app_event_sender);
+    let mut app = App::new(None, false, events.app_event_sender);
     app.current_screen = CurrentScreen::Confirmation;
     app.search_fields = SearchFields::with_values("foo", "bar", true, "pattern");
 
@@ -113,7 +113,7 @@ async fn test_back_from_results() {
     assert_eq!(app.search_fields.search().text, "foo");
     assert_eq!(app.search_fields.replace().text, "bar");
     assert!(app.search_fields.fixed_strings().checked);
-    assert_eq!(app.search_fields.filename_pattern().text, "pattern");
+    assert_eq!(app.search_fields.path_pattern().text, "pattern");
     assert_eq!(app.current_screen, CurrentScreen::Searching);
     assert_eq!(app.results, Results::Loading);
 }
@@ -157,7 +157,7 @@ fn setup_env_simple_files() -> App {
     };
 
     let events = EventHandler::new();
-    App::new(Some(temp_dir.into_path()), events.app_event_sender)
+    App::new(Some(temp_dir.into_path()), false, events.app_event_sender)
 }
 
 #[tokio::test]
@@ -200,7 +200,7 @@ async fn test_update_search_results_regex() {
     app.update_search_results().unwrap();
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
-        assert_eq!(search_state.results.len(), 4,);
+        assert_eq!(search_state.results.len(), 4);
 
         let mut file_match_counts = std::collections::HashMap::new();
 
@@ -281,14 +281,8 @@ fn setup_env_files_in_dirs() -> App {
         }
     };
 
-    for dir in fs::read_dir(temp_dir.path()).unwrap() {
-        for path in fs::read_dir(dir.unwrap().path()).unwrap() {
-            println!("Name: {}", path.unwrap().path().display())
-        }
-    }
-
     let events = EventHandler::new();
-    App::new(Some(temp_dir.into_path()), events.app_event_sender)
+    App::new(Some(temp_dir.into_path()), false, events.app_event_sender)
 }
 
 #[tokio::test]
@@ -301,14 +295,12 @@ async fn test_update_search_results_filtered_dir() {
     assert!(result.is_ok());
 
     if let scooter::Results::SearchComplete(search_state) = &app.results {
-        assert_eq!(search_state.results.len(), 2);
-
-        for (file_path, num_matches) in [
+        let expected_matches = [
             (Path::new("dir1").join("file1.txt"), 0),
             (Path::new("dir2").join("file2.txt"), 1),
             (Path::new("dir2").join("file3.txt"), 1),
-        ] {
-            println!("Results: {:?}", search_state.results);
+        ];
+        for (file_path, num_matches) in expected_matches.clone() {
             assert_eq!(
                 search_state
                     .results
@@ -322,6 +314,13 @@ async fn test_update_search_results_filtered_dir() {
                 num_matches
             );
         }
+        assert_eq!(
+            search_state.results.len(),
+            expected_matches
+                .map(|(_, count)| count)
+                .into_iter()
+                .sum::<usize>()
+        );
 
         for result in &search_state.results {
             assert_eq!(result.replacement, result.line.replace("testing", "f"));
@@ -331,6 +330,153 @@ async fn test_update_search_results_filtered_dir() {
     }
 }
 
-// TODO: add tests for:
-// - replacing in files
-// - more tests for passing in directory via CLI arg
+fn setup_env_files_with_gif() -> App {
+    let temp_dir = TempDir::new().unwrap();
+
+    create_test_files! {
+        temp_dir,
+        "dir1/file1.txt" => {
+            "This is a text file",
+        },
+        "dir2/file2.gif" => {
+            "This is a gif file",
+        },
+        "file3.txt" => {
+            "This is a text file",
+        }
+    };
+
+    let events = EventHandler::new();
+    App::new(Some(temp_dir.into_path()), false, events.app_event_sender)
+}
+
+#[tokio::test]
+async fn test_ignores_gif_file() {
+    let mut app = setup_env_files_with_gif();
+
+    app.search_fields = SearchFields::with_values(r"is", "", false, "");
+
+    let result = app.update_search_results();
+    assert!(result.is_ok());
+
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
+        let expected_matches = [
+            (Path::new("dir1").join("file1.txt"), 1),
+            (Path::new("dir2").join("file2.gif"), 0),
+            (Path::new("file3.txt").to_path_buf(), 1),
+        ];
+        for (file_path, num_matches) in expected_matches.clone() {
+            assert_eq!(
+                search_state
+                    .results
+                    .iter()
+                    .filter(|result| {
+                        let result_path = result.path.to_str().unwrap();
+                        let file_path = file_path.to_str().unwrap();
+                        result_path.contains(file_path)
+                    })
+                    .count(),
+                num_matches
+            );
+        }
+        assert_eq!(
+            search_state.results.len(),
+            expected_matches
+                .map(|(_, count)| count)
+                .into_iter()
+                .sum::<usize>()
+        );
+
+        for result in &search_state.results {
+            assert_eq!(result.replacement, "Th  a text file");
+        }
+    } else {
+        panic!("Expected SearchComplete results");
+    }
+}
+
+fn setup_env_files_with_hidden(include_hidden: bool) -> App {
+    let temp_dir = TempDir::new().unwrap();
+
+    create_test_files! {
+        temp_dir,
+        "dir1/file1.txt" => {
+            "This is a text file",
+        },
+        ".dir2/file2.rs" => {
+            "This is a file in a hidden directory",
+        },
+        ".file3.txt" => {
+            "This is a hidden text file",
+        }
+    };
+
+    let events = EventHandler::new();
+    App::new(
+        Some(temp_dir.into_path()),
+        include_hidden,
+        events.app_event_sender,
+    )
+}
+
+async fn hidden_files_test_impl(include_hidden: bool) {
+    let mut app = setup_env_files_with_hidden(include_hidden);
+
+    app.search_fields = SearchFields::with_values(r"This", "bar", false, "");
+
+    let result = app.update_search_results();
+    assert!(result.is_ok());
+
+    if let scooter::Results::SearchComplete(search_state) = &app.results {
+        let expected_matches = [
+            (Path::new("dir1").join("file1.txt"), 1),
+            (
+                Path::new(".dir2").join("file2.rs"),
+                if include_hidden { 1 } else { 0 },
+            ),
+            (
+                Path::new(".file3.txt").to_path_buf(),
+                if include_hidden { 1 } else { 0 },
+            ),
+        ];
+        for (file_path, num_matches) in expected_matches.clone() {
+            assert_eq!(
+                search_state
+                    .results
+                    .iter()
+                    .filter(|result| {
+                        let result_path = result.path.to_str().unwrap();
+                        let file_path = file_path.to_str().unwrap();
+                        result_path.contains(file_path)
+                    })
+                    .count(),
+                num_matches
+            );
+        }
+        assert_eq!(
+            search_state.results.len(),
+            expected_matches
+                .map(|(_, count)| count)
+                .into_iter()
+                .sum::<usize>()
+        );
+    } else {
+        panic!("Expected SearchComplete results");
+    }
+}
+
+#[tokio::test]
+async fn test_ignores_hidden_files_by_default() {
+    hidden_files_test_impl(false).await;
+}
+
+#[tokio::test]
+async fn test_includes_hidden_files_with_flag() {
+    hidden_files_test_impl(true).await;
+}
+
+// TODO:
+// - Add tests for:
+//   - replacing in files
+//   - more tests for passing in directory via CLI arg
+// - Tidy up tests - lots of duplication

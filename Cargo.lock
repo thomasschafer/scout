@@ -1042,7 +1042,7 @@ dependencies = [
 
 [[package]]
 name = "scooter"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -1057,6 +1057,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "similar",
  "simple-log",
  "tempfile",
  "tokio",
@@ -1157,6 +1158,12 @@ checksum = "a9e9e0b4211b72e7b8b6e85c807d36c212bdb33ea8587f7569562a84df5465b1"
 dependencies = [
  "libc",
 ]
+
+[[package]]
+name = "similar"
+version = "2.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1de1d4f81173b03af4c0cbed3c898f6bff5b870e4a7f5d6f4057d62a7a4b686e"
 
 [[package]]
 name = "simple-log"

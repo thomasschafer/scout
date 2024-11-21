@@ -10,9 +10,34 @@ If the instance you're attempting to replace has changed since the search was pe
 
 ## Features
 
-Scooter respects both `.gitignore` and `.ignore` files.
+Scooter respects both `.gitignore` and `.ignore` files. By default hidden files (such as those starting with a `.`) are ignored, but can be included with the `--hidden` flag.
 
 You can add capture groups to the search regex and use them in the replacement string: for instance, if you use `(\d) - (\w+)` for the search text and `($2) "$1"` as the replacement, then `9 - foo` would be replaced with `(foo) "9"`.
+
+## Usage
+
+Run
+
+```sh
+scooter
+```
+
+in a terminal to launch Scooter. By default the current directory is used to search and replace in, but you can pass in a directory as the first argument to override this behaviour:
+
+```sh
+scooter ../foo/bar`
+```
+
+A set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
+
+### Search fields
+
+When on the search screen the following fields are available:
+
+- **Search text**: Text to search with. Defaults to regex, unless "Fixed strings" is enabled, in which case this reverts to case-sensitive string search.
+- **Replace text**: Text to replace the search text with. If searching with regex, this can include capture groups.
+- **Fixed strings**: If enabled, search with plain case-sensitive strings. If disabled, search with regex.
+- **Path pattern (regex)**: Regex pattern that file paths must match. The relative path of the file is matched against: for instance, if searching in `/foo/`, if the path pattern is set to `bar` then `/foo/bar.txt` and `/foo/bar/file.rs` will be included. In the same example, if the path pattern is set to `foo` then `/foo/bar.txt` will *not* be included, but `/foo/foo.txt` will be.
 
 ## Installation
 
@@ -26,7 +51,20 @@ cargo install scooter
 
 ### NixOS
 
-Scooter is available in [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=scooter).
+Scooter is available as `scooter` in [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=scooter), currently on the unstable channel.
+
+### Prebuilt binaries
+
+You can download binaries from the [releases page](https://github.com/thomasschafer/scooter/releases/latest). After downloading, unzip the binary and move it to a directory in your `PATH`.
+
+- **Linux**
+  - Intel/AMD: `*-x86_64-unknown-linux-musl.tar.gz`
+  - ARM64: `*-aarch64-unknown-linux-musl.tar.gz`
+- **macOS**
+  - Apple silicon: `*-aarch64-apple-darwin.tar.gz`
+  - Intel: `*-x86_64-apple-darwin.tar.gz`
+- **Windows**
+  - `*-x86_64-pc-windows-msvc.zip`
 
 ### Building from source
 
@@ -35,13 +73,9 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 ```sh
 git clone git@github.com:thomasschafer/scooter.git
 cd scooter
-cargo install --path .
+cargo install --path . --locked
 ```
-
-## Usage
-
-Run `scooter` in a terminal to launch Scooter. You can then enter some text to search with and text to replace matches with, toggle on or off fixed strings, and enter a regex pattern that filenames must match. A more extensive set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
 
 ## Contributing
 
-Contributions are very welcome! I'd be especially grateful for any contributions to add scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.
+Contributions are very welcome! I'd be especially grateful for any contributions to add Scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.

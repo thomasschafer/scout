@@ -1,6 +1,6 @@
 use ignore::WalkBuilder;
 use itertools::Itertools;
-use log::{error, info};
+use log::{info, warn};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -8,7 +8,7 @@ use std::{
     collections::HashMap,
     fs::{self, File},
     io::{BufRead, BufReader, BufWriter, Write},
-    path::PathBuf,
+    path::{Path, PathBuf},
     rc::Rc,
 };
 use tokio::sync::mpsc;
@@ -152,7 +152,7 @@ pub enum FieldName {
     Search,
     Replace,
     FixedStrings,
-    FilenamePattern,
+    PathPattern,
 }
 
 pub struct SearchField {
@@ -205,12 +205,7 @@ impl SearchFields {
         Checkbox,
         CheckboxField
     );
-    define_field_accessor!(
-        filename_pattern,
-        FieldName::FilenamePattern,
-        Text,
-        TextField
-    );
+    define_field_accessor!(path_pattern, FieldName::PathPattern, Text, TextField);
 
     pub fn focus_next(&mut self) {
         self.highlighted = (self.highlighted + 1) % self.fields.len();
@@ -245,7 +240,7 @@ impl SearchFields {
     pub fn with_values(
         search: impl Into<String>,
         replace: impl Into<String>,
-        checked: bool,
+        fixed_strings: bool,
         filname_pattern: impl Into<String>,
     ) -> Self {
         Self {
@@ -260,10 +255,10 @@ impl SearchFields {
                 },
                 SearchField {
                     name: FieldName::FixedStrings,
-                    field: Rc::new(RefCell::new(Field::checkbox(checked))),
+                    field: Rc::new(RefCell::new(Field::checkbox(fixed_strings))),
                 },
                 SearchField {
-                    name: FieldName::FilenamePattern,
+                    name: FieldName::PathPattern,
                     field: Rc::new(RefCell::new(Field::text(filname_pattern.into()))),
                 },
             ],
@@ -289,13 +284,20 @@ pub struct App {
     pub search_fields: SearchFields,
     pub results: Results,
     pub directory: PathBuf,
+    pub include_hidden: bool,
 
     pub running: bool,
     pub event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
+const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
+
 impl App {
-    pub fn new(directory: Option<PathBuf>, event_sender: mpsc::UnboundedSender<AppEvent>) -> App {
+    pub fn new(
+        directory: Option<PathBuf>,
+        include_hidden: bool,
+        event_sender: mpsc::UnboundedSender<AppEvent>,
+    ) -> App {
         let directory = match directory {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
@@ -306,6 +308,7 @@ impl App {
             search_fields: SearchFields::with_values("", "", false, ""),
             results: Results::Loading,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
+            include_hidden,
 
             running: true,
             event_sender,
@@ -313,7 +316,11 @@ impl App {
     }
 
     pub fn reset(&mut self) {
-        *self = Self::new(Some(self.directory.clone()), self.event_sender.clone());
+        *self = Self::new(
+            Some(self.directory.clone()),
+            self.include_hidden,
+            self.event_sender.clone(),
+        );
     }
 
     pub fn handle_event(&mut self, event: AppEvent) -> bool {
@@ -460,7 +467,7 @@ impl App {
 
         let mut results = vec![];
 
-        let s = self.search_fields.filename_pattern().text();
+        let s = self.search_fields.path_pattern().text();
         let patt = if s.is_empty() {
             None
         } else {
@@ -468,7 +475,7 @@ impl App {
                 Err(e) => {
                     info!("Error when parsing filname pattern regex {}", e);
                     self.search_fields
-                        .filename_pattern()
+                        .path_pattern()
                         .set_error("Couldn't parse regex".to_owned());
                     return Ok(false);
                 }
@@ -476,15 +483,22 @@ impl App {
             }
         };
 
-        let paths: Vec<_> = WalkBuilder::new(&self.directory)
-            .build()
+        let walker = WalkBuilder::new(&self.directory)
+            .hidden(!self.include_hidden)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .build();
+        let paths: Vec<_> = walker
             .flatten()
             .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
             .filter(|path| {
-                patt.as_ref().map_or(true, |p| {
-                    p.is_match(self.relative_path(path.clone()).as_str())
-                })
+                if self.ignore_file(path) {
+                    return false;
+                }
+                match patt.as_ref() {
+                    Some(p) => p.is_match(self.relative_path(path.clone()).as_str()),
+                    None => true,
+                }
             })
             .collect();
 
@@ -506,13 +520,13 @@ impl App {
                                 };
                             }
                             Err(err) => {
-                                error!("Error opening file {:?}: {err}", path);
+                                warn!("Error retrieving line {} of {:?}: {err}", line_number, path);
                             }
                         }
                     }
                 }
                 Err(err) => {
-                    error!("Error opening file {:?}: {err}", path);
+                    warn!("Error opening file {:?}: {err}", path);
                 }
             }
         }
@@ -656,5 +670,16 @@ impl App {
             .into_string()
             .expect("Failed to display path");
         replace_start(path, current_dir, ".")
+    }
+
+    fn ignore_file(&self, path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            if let Some(ext_str) = ext.to_str() {
+                if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 }

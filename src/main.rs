@@ -4,6 +4,11 @@ use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, str::FromStr};
 use tui::Tui;
 
+use crate::{
+    app::App,
+    event::{Event, EventHandler},
+};
+
 mod app;
 mod event;
 mod fields;
@@ -11,17 +16,18 @@ mod logging;
 mod tui;
 mod ui;
 mod utils;
-use crate::{
-    app::App,
-    event::{Event, EventHandler},
-};
 
 #[derive(Parser, Debug)]
 #[command(about = "Interactive find and replace TUI.")]
+#[command(version)]
 struct Args {
     /// Directory in which to search
     #[arg(index = 1)]
     directory: Option<String>,
+
+    /// Include hidden files and directories, such as those whose name starts with a dot (.)
+    #[arg(short = '.', long, default_value = "false")]
+    hidden: bool,
 }
 
 #[tokio::main]
@@ -37,7 +43,7 @@ async fn main() -> anyhow::Result<()> {
 
     let events = EventHandler::new();
     let app_event_sender = events.app_event_sender.clone();
-    let mut app = App::new(directory, app_event_sender);
+    let mut app = App::new(directory, args.hidden, app_event_sender);
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
