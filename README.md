@@ -49,6 +49,10 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 cargo install scooter
 ```
 
+### NixOS
+
+Scooter is available as `scooter` in [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=scooter), currently on the unstable channel.
+
 ### Prebuilt binaries
 
 You can download binaries from the [releases page](https://github.com/thomasschafer/scooter/releases/latest). After downloading, unzip the binary and move it to a directory in your `PATH`.
