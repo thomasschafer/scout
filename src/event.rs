@@ -4,7 +4,7 @@ use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum Event {
     Key(KeyEvent),
     App(AppEvent),
@@ -16,7 +16,7 @@ pub enum Event {
 
 #[derive(Debug)]
 pub struct EventHandler {
-    receiver: mpsc::UnboundedReceiver<Event>,
+    pub receiver: mpsc::UnboundedReceiver<Event>,
     pub app_event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
@@ -55,13 +55,6 @@ impl EventHandler {
             receiver,
             app_event_sender,
         }
-    }
-
-    pub async fn next(&mut self) -> anyhow::Result<Event> {
-        self.receiver
-            .recv()
-            .await
-            .ok_or(anyhow!("Event stream ended unexpectedly"))
     }
 }
 

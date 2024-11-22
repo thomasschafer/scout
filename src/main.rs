@@ -1,10 +1,12 @@
 #![feature(mapped_lock_guards)]
 
+use app::BackgroundProcessingEvent;
 use clap::Parser;
 use log::LevelFilter;
 use logging::{setup_logging, DEFAULT_LOG_LEVEL};
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, str::FromStr};
+use std::{io, path::PathBuf, str::FromStr};
+use tokio::sync::mpsc;
 use tui::Tui;
 use utils::validate_directory;
 
@@ -60,25 +62,32 @@ async fn main() -> anyhow::Result<()> {
         Some(d) => Some(validate_directory(&d)?),
     };
 
-    let events = EventHandler::new();
-    let app_event_sender = events.app_event_sender.clone();
-    let mut app = App::new(directory, args.hidden, app_event_sender);
+    let app_events_handler = EventHandler::new();
+    let (bp_sender, mut bp_receiver) = mpsc::unbounded_channel::<BackgroundProcessingEvent>();
+    let app_event_sender = app_events_handler.app_event_sender.clone();
+    let mut app = App::new(directory, args.hidden, app_event_sender, bp_sender);
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
-    let mut tui = Tui::new(terminal, events);
+    let mut tui = Tui::new(terminal, app_events_handler);
     tui.init()?;
+    tui.draw(&mut app)?;
 
     while app.running {
-        tui.draw(&mut app)?;
-        let exit = match tui.events.next().await? {
-            Event::Key(key_event) => app.handle_key_events(&key_event)?,
-            Event::Mouse(_) => false,
-            Event::Resize(_, _) => false,
-            Event::App(app_event) => app.handle_event(app_event).await,
-        };
-        if exit {
-            break;
+        tokio::select! {
+            Some(event) = tui.events.receiver.recv() => {
+                let exit = match event {
+                    Event::Key(key_event) => app.handle_key_events(&key_event)?,
+                    Event::Mouse(_) => false,
+                    Event::Resize(_, _) => false,
+                    Event::App(app_event) => app.handle_app_event(app_event).await,
+                };
+                tui.draw(&mut app)?;
+                if exit {
+                    break;
+                }
+            }
+            Some(event) = bp_receiver.recv() => app.handle_background_processing_event(event)
         }
     }
 

@@ -91,7 +91,7 @@ async fn test_app_reset() {
     app.reset();
 
     assert!(matches!(app.current_screen, CurrentScreen::Search));
-    assert!(matches!(app.results, Results::Loading));
+    assert!(matches!(app.results, Results::NotStarted));
 }
 
 #[tokio::test]
@@ -115,7 +115,7 @@ async fn test_back_from_results() {
     assert!(app.search_fields.fixed_strings().checked);
     assert_eq!(app.search_fields.path_pattern().text, "pattern");
     assert_eq!(app.current_screen, CurrentScreen::Search);
-    assert_eq!(app.results, Results::Loading);
+    assert_eq!(app.results, Results::NotStarted);
 }
 
 macro_rules! create_test_files {

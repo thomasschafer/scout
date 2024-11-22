@@ -1,4 +1,5 @@
 use itertools::Itertools;
+use log::error;
 use ratatui::{
     layout::Constraint,
     layout::{Alignment, Direction, Flex, Layout, Rect},
@@ -12,7 +13,8 @@ use std::{cmp::min, iter};
 
 use crate::{
     app::{
-        App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+        App, CurrentScreen, FieldName, ReplaceResult, Results, SearchField, SearchResult,
+        NUM_SEARCH_FIELDS,
     },
     utils::group_by,
 };
@@ -135,6 +137,7 @@ pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Di
 }
 
 fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
+    error!("Rendering confirmation view");
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
@@ -143,24 +146,39 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             .flex(Flex::Start)
             .areas(area);
 
-    let complete_state = app.results.search_complete();
+    let (is_complete, search_results) = match &app.results {
+        Results::SearchInProgress(results) => (false, results),
+        Results::SearchComplete(results) => (true, results),
+        _ => panic!(
+            "Expected SearchInProgress or SearchComplete, found {}",
+            app.results.name()
+        ),
+    };
 
     let list_area_height = list_area.height as usize;
     let item_height = 4; // TODO: find a better way of doing this
     let midpoint = list_area_height / (2 * item_height);
-    let num_results = complete_state.results.len();
+    let num_results = search_results.results.len();
 
     frame.render_widget(
-        Span::raw(format!("Results: {}", num_results)),
+        Span::raw(format!(
+            "Results: {} {}",
+            num_results,
+            if is_complete {
+                "[Search complete]" // TODO: remove this
+            } else {
+                "[Still searching...]"
+            }
+        )),
         num_results_area,
     );
 
-    let results_iter = complete_state
+    let results_iter = search_results
         .results
         .iter()
         .enumerate()
         .skip(min(
-            complete_state.selected.saturating_sub(midpoint),
+            search_results.selected.saturating_sub(midpoint),
             num_results.saturating_sub(list_area_height / item_height),
         ))
         .take(list_area_height / item_height + 1); // We shouldn't need the +1, but let's keep it in to ensure we have buffer when rendering
@@ -174,7 +192,7 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             app.relative_path(&result.path),
             result.line_number
         );
-        let file_path_style = if complete_state.selected == idx {
+        let file_path_style = if search_results.selected == idx {
             Style::new().bg(if result.included {
                 Color::Blue
             } else {
@@ -360,9 +378,6 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
 
     let render_fn: RenderFn = match app.current_screen {
         CurrentScreen::Search => Box::new(render_search_view),
-        CurrentScreen::PerformingSearch => {
-            Box::new(render_loading_view("Performing search...".to_owned()))
-        }
         CurrentScreen::Confirmation => Box::new(render_confirmation_view),
         CurrentScreen::PerformingReplacement => {
             Box::new(render_loading_view("Performing replacement...".to_owned()))
@@ -385,7 +400,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
                 "<C-o> back",
             ]
         }
-        CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => vec![],
+        CurrentScreen::PerformingReplacement => vec![],
         CurrentScreen::Results => {
             if !app.results.replace_complete().errors.is_empty() {
                 vec!["<j> down", "<k> up"]

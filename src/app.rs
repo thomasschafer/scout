@@ -1,6 +1,6 @@
 use ignore::{WalkBuilder, WalkState};
 use itertools::Itertools;
-use log::{info, warn};
+use log::{error, info, warn};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -14,7 +14,7 @@ use std::{
         RwLockWriteGuard,
     },
 };
-use tokio::sync::mpsc;
+use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
     fields::{CheckboxField, Field, TextField},
@@ -24,7 +24,6 @@ use crate::{
 #[derive(Debug, Eq, PartialEq)]
 pub enum CurrentScreen {
     Search,
-    PerformingSearch,
     Confirmation,
     PerformingReplacement,
     Results,
@@ -46,11 +45,9 @@ pub struct SearchResult {
     pub replace_result: Option<ReplaceResult>,
 }
 
-type SearchResults = Vec<SearchResult>;
-
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
-    pub results: SearchResults,
+    pub results: Vec<SearchResult>,
     pub selected: usize, // TODO: allow for selection of ranges
 }
 
@@ -84,7 +81,7 @@ impl SearchState {
 pub struct ReplaceState {
     pub num_successes: usize,
     pub num_ignored: usize,
-    pub errors: SearchResults,
+    pub errors: Vec<SearchResult>,
     pub replacement_errors_pos: usize,
 }
 
@@ -107,16 +104,16 @@ impl ReplaceState {
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Results {
-    Loading,
-    SearchInProgress(SearchResults),
+    NotStarted,
+    SearchInProgress(SearchState),
     SearchComplete(SearchState),
     ReplaceComplete(ReplaceState),
 }
 
 impl Results {
-    fn name(&self) -> String {
+    pub fn name(&self) -> String {
         match self {
-            Self::Loading => "Loading",
+            Self::NotStarted => "NotStarted",
             Self::SearchInProgress(_) => "SearchInProgress",
             Self::SearchComplete(_) => "SearchComplete",
             Self::ReplaceComplete(_) => "ReplaceComplete",
@@ -137,13 +134,15 @@ macro_rules! complete_state_impl {
 }
 
 impl Results {
-    #[allow(dead_code)]
-    pub fn searching(&self) -> &SearchResults {
-        complete_state_impl!(self, SearchInProgress)
-    }
-
-    pub fn searching_mut(&mut self) -> &mut SearchResults {
-        complete_state_impl!(self, SearchInProgress)
+    pub fn search_results_mut(&mut self) -> &mut SearchState {
+        match self {
+            Results::SearchInProgress(results) => results,
+            Results::SearchComplete(results) => results,
+            _ => panic!(
+                "Expected SearchInProgress or SearchComplete, found {}",
+                self.name()
+            ),
+        }
     }
 
     pub fn search_complete(&self) -> &SearchState {
@@ -320,36 +319,53 @@ impl SearchFields {
     }
 }
 
+#[derive(Clone, Debug)]
 pub enum SearchType {
     Pattern(Regex),
     Fixed(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub enum AppEvent {
     Rerender,
     PerformSearch,
+    SearchComplete,
     PerformReplacement,
+}
+
+// TODO: receive and pass in to handle_path, only rerender when needed
+#[derive(Debug)]
+pub enum BackgroundProcessingEvent {
+    HandleSearchResult(PathBuf),
 }
 
 pub struct App {
     pub current_screen: CurrentScreen,
     pub search_fields: SearchFields,
+    pub parsed_fields: Option<ParsedFields>, // TODO: deduplicate/make safer
     pub results: Results,
     pub directory: PathBuf,
     pub include_hidden: bool,
 
     pub running: bool,
-    pub event_sender: mpsc::UnboundedSender<AppEvent>,
+    pub event_sender: UnboundedSender<AppEvent>,
+    pub background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
 }
 
 const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
+
+#[derive(Clone, Debug)] // TODO: make this not clone
+pub struct ParsedFields {
+    search_pattern: SearchType,
+    path_pattern: Option<Regex>,
+}
 
 impl App {
     pub fn new(
         directory: Option<PathBuf>,
         include_hidden: bool,
-        event_sender: mpsc::UnboundedSender<AppEvent>,
+        event_sender: UnboundedSender<AppEvent>,
+        background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> App {
         let directory = match directory {
             Some(d) => d,
@@ -359,12 +375,14 @@ impl App {
         App {
             current_screen: CurrentScreen::Search,
             search_fields: SearchFields::with_values("", "", false, ""),
-            results: Results::Loading,
+            parsed_fields: None, // TODO: make this safer
+            results: Results::NotStarted,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
             include_hidden,
 
             running: true,
             event_sender,
+            background_processing_sender,
         }
     }
 
@@ -373,39 +391,61 @@ impl App {
             Some(self.directory.clone()),
             self.include_hidden,
             self.event_sender.clone(),
+            self.background_processing_sender.clone(),
         );
     }
 
-    pub async fn handle_event(&mut self, event: AppEvent) -> bool {
+    pub async fn handle_app_event(&mut self, event: AppEvent) -> bool {
         match event {
-            AppEvent::Rerender => {}
+            AppEvent::Rerender => {
+                error!("In AppEvent::Rerender");
+            }
             AppEvent::PerformSearch => {
-                let continue_to_confirmation = self
-                    .update_search_results()
-                    .await
-                    .expect("Failed to unwrap search results");
-                self.current_screen = if continue_to_confirmation {
-                    CurrentScreen::Confirmation
-                } else {
-                    CurrentScreen::Search
-                };
-                self.event_sender.send(AppEvent::Rerender).unwrap();
+                self.update_search_results().await.unwrap();
+            }
+            AppEvent::SearchComplete => {
+                match mem::replace(&mut self.results, Results::NotStarted) {
+                    Results::SearchInProgress(search_state) => {
+                        self.results = Results::SearchComplete(search_state);
+                    }
+                    _ => {
+                        panic!("Expected SearchInProgress");
+                    }
+                }
             }
             AppEvent::PerformReplacement => {
                 self.perform_replacement();
                 self.current_screen = CurrentScreen::Results;
-                self.event_sender.send(AppEvent::Rerender).unwrap();
             }
         };
         false
+    }
+
+    pub fn handle_background_processing_event(&mut self, event: BackgroundProcessingEvent) {
+        match event {
+            BackgroundProcessingEvent::HandleSearchResult(path) => self.handle_path(&path),
+        }
     }
 
     fn handle_key_searching(&mut self, key: &KeyEvent) -> bool {
         self.search_fields.clear_errors();
         match (key.code, key.modifiers) {
             (KeyCode::Enter, _) => {
-                self.current_screen = CurrentScreen::PerformingSearch;
-                self.event_sender.send(AppEvent::PerformSearch).unwrap();
+                match self.validate_fields().unwrap() {
+                    None => {
+                        self.current_screen = CurrentScreen::Search;
+                        self.event_sender.send(AppEvent::Rerender).unwrap();
+                    }
+                    Some(parsed_fields) => {
+                        self.results = Results::SearchInProgress(SearchState {
+                            results: vec![],
+                            selected: 0,
+                        });
+                        self.parsed_fields = Some(parsed_fields.clone());
+                        self.current_screen = CurrentScreen::Confirmation;
+                        self.event_sender.send(AppEvent::PerformSearch).unwrap();
+                    }
+                };
             }
             (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
                 self.search_fields.focus_prev();
@@ -484,6 +524,7 @@ impl App {
             return Ok(false);
         }
 
+        // TODO: why doesn't this work while search (or replacement?) are being completed? Also ignore other keys, i.e. don't allow them to queue up
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(true),
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
@@ -496,13 +537,25 @@ impl App {
         let exit = match self.current_screen {
             CurrentScreen::Search => self.handle_key_searching(key),
             CurrentScreen::Confirmation => self.handle_key_confirmation(key),
-            CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => false,
+            CurrentScreen::PerformingReplacement => false,
             CurrentScreen::Results => self.handle_key_results(key),
         };
         Ok(exit)
     }
 
-    fn handle_path(&mut self, path: &Path, pattern: &SearchType) {
+    fn handle_path(&mut self, path: &Path) {
+        if self.ignore_file(path) {
+            return;
+        }
+
+        if let Some(p) = self.parsed_fields.clone().unwrap().path_pattern {
+            // TODO: don't clone
+            let matches_pattern = p.is_match(self.relative_path(path).as_str());
+            if !matches_pattern {
+                return;
+            }
+        }
+
         match File::open(path) {
             Ok(file) => {
                 let reader = BufReader::new(file);
@@ -510,13 +563,11 @@ impl App {
                 for (line_number, line) in reader.lines().enumerate() {
                     match line {
                         Ok(line) => {
-                            if let Some(result) = self.replacement_if_match(
-                                pattern,
-                                line,
-                                path.to_path_buf(),
-                                line_number,
-                            ) {
-                                self.results.searching_mut().push(result);
+                            if let Some(result) =
+                                self.replacement_if_match(line, path.to_path_buf(), line_number)
+                            {
+                                error!("Pushing result");
+                                self.results.search_results_mut().results.push(result);
                             }
                         }
                         Err(err) => {
@@ -531,15 +582,15 @@ impl App {
         }
     }
 
-    pub async fn update_search_results(&mut self) -> anyhow::Result<bool> {
-        let pattern = match self.search_fields.search_type() {
+    fn validate_fields(&self) -> anyhow::Result<Option<ParsedFields>> {
+        let search_pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
                     info!("Error when parsing search regex {}", e);
                     self.search_fields
                         .search_mut()
                         .set_error("Couldn't parse regex".to_owned());
-                    return Ok(false);
+                    return Ok(None);
                 } else {
                     return Err(e);
                 }
@@ -557,74 +608,66 @@ impl App {
                     self.search_fields
                         .path_pattern_mut()
                         .set_error("Couldn't parse regex".to_owned());
-                    return Ok(false);
+                    return Ok(None);
                 }
                 Ok(r) => Some(r),
             }
         };
 
-        let current_dir = self.directory.clone();
+        Ok(Some(ParsedFields {
+            search_pattern,
+            path_pattern,
+        }))
+    }
 
+    pub async fn update_search_results(&mut self) -> anyhow::Result<()> {
         let walker = WalkBuilder::new(&self.directory)
             .hidden(!self.include_hidden)
             .filter_entry(|entry| entry.file_name() != ".git")
             .build_parallel();
 
-        self.results = Results::SearchInProgress(vec![]);
+        let event_sender = self.event_sender.clone();
+        let background_processing_sender = self.background_processing_sender.clone();
 
-        let (sender, mut receiver) = mpsc::unbounded_channel::<PathBuf>();
+        tokio::spawn(async move {
+            walker.run(|| {
+                let sender = background_processing_sender.clone();
 
-        walker.run(|| {
-            Box::new(|entry| {
-                let entry = match entry {
-                    Ok(entry) => entry,
-                    Err(_) => return WalkState::Continue, // TODO handle errors
-                };
-                if !entry.file_type().is_some_and(|ft| ft.is_file()) {
-                    return WalkState::Continue;
-                };
-                if Self::ignore_file(entry.path()) {
-                    return WalkState::Continue;
-                }
-                if let Some(p) = path_pattern.as_ref() {
-                    let matches_pattern =
-                        p.is_match(Self::relative_path_impl(&current_dir, entry.path()).as_str());
-                    if !matches_pattern {
+                Box::new(move |entry| {
+                    let entry = match entry {
+                        Ok(entry) => entry,
+                        Err(_) => return WalkState::Continue,
+                    };
+
+                    if !entry.file_type().is_some_and(|ft| ft.is_file()) {
                         return WalkState::Continue;
-                    }
-                }
-                sender.send(entry.path().to_path_buf()).unwrap();
-                WalkState::Continue
-            })
+                    };
+
+                    sender
+                        .send(BackgroundProcessingEvent::HandleSearchResult(
+                            entry.path().to_path_buf(),
+                        ))
+                        .unwrap();
+
+                    WalkState::Continue
+                })
+            });
+
+            // TODO: we need to send this only after all HandleSearchResult have been processed
+            event_sender.send(AppEvent::SearchComplete).unwrap();
         });
 
-        while let Some(path) = receiver.recv().await {
-            self.handle_path(&path, &pattern);
-        }
-
-        match mem::replace(&mut self.results, Results::Loading) {
-            Results::SearchInProgress(results) => {
-                self.results = Results::SearchComplete(SearchState {
-                    results,
-                    selected: 0,
-                });
-            }
-            _ => {
-                panic!("Expected SearchInProgress");
-            }
-        }
-
-        Ok(true)
+        Ok(())
     }
 
     fn replacement_if_match(
         &mut self,
-        pattern: &SearchType,
         line: String,
         path: PathBuf,
         line_number: usize,
     ) -> Option<SearchResult> {
-        let maybe_replacement = match *pattern {
+        // TODO: don't clone
+        let maybe_replacement = match self.parsed_fields.clone().unwrap().search_pattern {
             SearchType::Fixed(ref s) => {
                 if line.contains(s) {
                     Some(line.replace(s, self.search_fields.replace().text().as_str()))
@@ -741,17 +784,13 @@ impl App {
         Ok(())
     }
 
-    pub fn relative_path(self: &App, path: &Path) -> String {
-        Self::relative_path_impl(&self.directory, path)
-    }
-
-    fn relative_path_impl(directory: &Path, path: &Path) -> String {
-        let current_dir = directory.to_str().unwrap();
+    pub fn relative_path(&self, path: &Path) -> String {
+        let current_dir = self.directory.to_str().unwrap();
         let path = path.to_str().expect("Failed to display path").to_owned();
         replace_start(path, current_dir, ".")
     }
 
-    fn ignore_file(path: &Path) -> bool {
+    fn ignore_file(&self, path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             if let Some(ext_str) = ext.to_str() {
                 if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
