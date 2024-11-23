@@ -26,14 +26,6 @@ use crate::{
 };
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum CurrentScreen {
-    Search,
-    Confirmation,
-    PerformingReplacement,
-    Results,
-}
-
-#[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
     pub results: Vec<SearchResult>,
     pub selected: usize, // TODO: allow for selection of ranges
@@ -97,85 +89,45 @@ pub struct SearchInProgressState {
     pub handle: JoinHandle<()>,
 }
 
+// #[derive(Debug)]
+// pub enum Results {
+//     NotStarted,
+//     SearchInProgress(SearchInProgressState),
+//     SearchComplete(SearchState),
+//     ReplaceComplete(ReplaceState),
+// }
+
 #[derive(Debug)]
-pub enum Results {
-    NotStarted,
-    SearchInProgress(SearchInProgressState),
-    SearchComplete(SearchState),
-    ReplaceComplete(ReplaceState),
+pub enum CurrentScreen {
+    Search,
+    ConfirmationSearchProgressing(SearchInProgressState),
+    ConfirmationSearchComplete(SearchState),
+    PerformingReplacement,
+    Results(ReplaceState),
 }
 
-impl Results {
+impl CurrentScreen {
     pub fn name(&self) -> String {
         match self {
-            Self::NotStarted => "NotStarted",
-            Self::SearchInProgress(_) => "SearchInProgress",
-            Self::SearchComplete(_) => "SearchComplete",
-            Self::ReplaceComplete(_) => "ReplaceComplete",
+            CurrentScreen::Search => "Search",
+            CurrentScreen::ConfirmationSearchProgressing(_) => "ConfirmationSearchProgressing",
+            CurrentScreen::ConfirmationSearchComplete(_) => "ConfirmationSearchComplete",
+            CurrentScreen::PerformingReplacement => "PerformingReplacement",
+            CurrentScreen::Results(_) => "Results",
         }
         .to_owned()
     }
-}
 
-macro_rules! complete_state_impl {
-    ($self:ident, $variant:ident) => {
-        match $self {
-            Results::$variant(state) => state,
-            _ => {
-                panic!("Expected {}, found {}", stringify!($variant), $self.name())
-            }
-        }
-    };
-}
-
-impl Results {
-    // TODO: refactor this with mut version below
-    #[allow(dead_code)]
-    pub fn search_results(&mut self) -> &SearchState {
-        match self {
-            Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
-            Results::SearchComplete(search_state) => search_state,
-            _ => panic!(
-                "Expected SearchInProgress or SearchComplete, found {}",
-                self.name()
-            ),
-        }
-    }
-
-    pub fn search_results_mut(&mut self) -> &mut SearchState {
-        match self {
-            Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
-            Results::SearchComplete(search_state) => search_state,
-            _ => panic!(
-                "Expected SearchInProgress or SearchComplete, found {}",
-                self.name()
-            ),
-        }
-    }
-
-    pub fn search_in_progress(&self) -> &SearchInProgressState {
-        complete_state_impl!(self, SearchInProgress)
-    }
-
-    pub fn search_in_progress_mut(&mut self) -> &mut SearchInProgressState {
-        complete_state_impl!(self, SearchInProgress)
-    }
-
-    pub fn search_complete(&self) -> &SearchState {
-        complete_state_impl!(self, SearchComplete)
-    }
-
-    pub fn search_complete_mut(&mut self) -> &mut SearchState {
-        complete_state_impl!(self, SearchComplete)
-    }
-
-    pub fn replace_complete(&self) -> &ReplaceState {
-        complete_state_impl!(self, ReplaceComplete)
-    }
-
-    pub fn replace_complete_mut(&mut self) -> &mut ReplaceState {
-        complete_state_impl!(self, ReplaceComplete)
-    }
+    // pub fn search_results_mut(&mut self) -> &mut SearchState {
+    //     match self {
+    //         Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
+    //         Results::SearchComplete(search_state) => search_state,
+    //         _ => panic!(
+    //             "Expected SearchInProgress or SearchComplete, found {}",
+    //             self.name()
+    //         ),
+    //     }
+    // }
 }
 
 #[derive(PartialEq)]
@@ -328,7 +280,6 @@ impl SearchFields {
 pub struct App {
     pub current_screen: CurrentScreen,
     pub search_fields: SearchFields,
-    pub results: Results,
     pub directory: PathBuf,
     pub include_hidden: bool,
 
@@ -352,7 +303,6 @@ impl App {
         Self {
             current_screen: CurrentScreen::Search,
             search_fields: SearchFields::with_values("", "", false, ""),
-            results: Results::NotStarted,
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
             include_hidden,
 
@@ -362,10 +312,13 @@ impl App {
     }
 
     pub fn cancel_search(&mut self) {
-        if let Results::SearchInProgress(SearchInProgressState { handle, .. }) = &self.results {
+        if let CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
+            handle, ..
+        }) = &self.current_screen
+        {
             handle.abort();
         }
-        self.results = Results::NotStarted;
+        self.current_screen = CurrentScreen::Search;
     }
 
     pub fn reset(&mut self) {
@@ -389,20 +342,19 @@ impl App {
             AppEvent::PerformSearch => {
                 match self.validate_fields().unwrap() {
                     None => {
-                        // Do nothing, we should be on the correct screen
-                        assert_eq!(self.current_screen, CurrentScreen::Search);
+                        self.current_screen = CurrentScreen::Search;
                     }
                     Some(parsed_fields) => {
                         let handle = self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
-                        self.results = Results::SearchInProgress(SearchInProgressState {
-                            search_state: SearchState {
-                                results: vec![],
-                                selected: 0,
-                            },
-                            last_render: Instant::now(),
-                            handle,
-                        });
-                        self.current_screen = CurrentScreen::Confirmation;
+                        self.current_screen =
+                            CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
+                                search_state: SearchState {
+                                    results: vec![],
+                                    selected: 0,
+                                },
+                                last_render: Instant::now(),
+                                handle,
+                            });
                     }
                 };
                 EventHandlingResult {
@@ -412,18 +364,15 @@ impl App {
             }
             AppEvent::AddSearchResult(result) => {
                 let mut rerender = false;
-                if let Results::SearchInProgress(SearchInProgressState {
-                    search_state: SearchState { results, .. },
-                    ..
-                }) = &mut self.results
+                if let CurrentScreen::ConfirmationSearchProgressing(search_in_progress_state) =
+                    &mut self.current_screen
                 {
-                    results.push(result);
+                    search_in_progress_state.search_state.results.push(result);
 
-                    if self.results.search_in_progress().last_render.elapsed()
-                        >= Duration::from_millis(100)
+                    if search_in_progress_state.last_render.elapsed() >= Duration::from_millis(100)
                     {
                         rerender = true;
-                        self.results.search_in_progress_mut().last_render = Instant::now();
+                        search_in_progress_state.last_render = Instant::now();
                     }
                 }
                 EventHandlingResult {
@@ -432,13 +381,12 @@ impl App {
                 }
             }
             AppEvent::SearchCompleted => {
-                if let Results::SearchInProgress(SearchInProgressState { search_state, .. }) =
-                    mem::replace(&mut self.results, Results::NotStarted)
+                if let CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
+                    search_state,
+                    ..
+                }) = mem::replace(&mut self.current_screen, CurrentScreen::Search)
                 {
-                    // If not on confirmation screen we've probably gone back to search screen so do nothing
-                    if self.current_screen == CurrentScreen::Confirmation {
-                        self.results = Results::SearchComplete(search_state);
-                    }
+                    self.current_screen = CurrentScreen::ConfirmationSearchComplete(search_state);
                     self.app_event_sender.send(AppEvent::Rerender).unwrap();
                 }
                 EventHandlingResult {
