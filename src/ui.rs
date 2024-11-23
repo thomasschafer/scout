@@ -12,7 +12,10 @@ use similar::{Change, ChangeTag, TextDiff};
 use std::{cmp::min, iter};
 
 use crate::{
-    app::{App, CurrentScreen, FieldName, Results, SearchField, NUM_SEARCH_FIELDS},
+    app::{
+        App, CurrentScreen, FieldName, Results, SearchField, SearchInProgressState,
+        NUM_SEARCH_FIELDS,
+    },
     event::{ReplaceResult, SearchResult},
     utils::group_by,
 };
@@ -145,12 +148,12 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             .areas(area);
 
     let (is_complete, search_results) = match &app.results {
-        Results::SearchInProgress(results) => (false, results),
-        Results::SearchComplete(results) => (true, results),
-        _ => panic!(
-            "Expected SearchInProgress or SearchComplete, found {}",
-            app.results.name()
-        ),
+        Results::SearchInProgress(SearchInProgressState { search_state, .. }) => {
+            (false, search_state)
+        }
+        Results::SearchComplete(search_state) => (true, search_state),
+        // prevent race condition when state is being reset
+        _ => return,
     };
 
     let list_area_height = list_area.height as usize;

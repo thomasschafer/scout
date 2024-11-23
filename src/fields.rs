@@ -259,6 +259,7 @@ impl Field {
         }
     }
 
+    #[allow(dead_code)]
     pub fn set_error(&mut self, error: String) {
         match self {
             Field::Text(f) => f.set_error(error),

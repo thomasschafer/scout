@@ -15,7 +15,7 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::sync::mpsc::UnboundedSender;
+use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
 
 use crate::{
     event::{AppEvent, ReplaceResult, SearchResult},
@@ -36,8 +36,7 @@ pub enum CurrentScreen {
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
     pub results: Vec<SearchResult>,
-    pub last_render: Instant, // TODO: this should only be present in SearchInProgress
-    pub selected: usize,      // TODO: allow for selection of ranges
+    pub selected: usize, // TODO: allow for selection of ranges
 }
 
 impl SearchState {
@@ -91,10 +90,17 @@ impl ReplaceState {
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug)]
+pub struct SearchInProgressState {
+    pub search_state: SearchState,
+    pub last_render: Instant,
+    pub handle: JoinHandle<()>,
+}
+
+#[derive(Debug)]
 pub enum Results {
     NotStarted,
-    SearchInProgress(SearchState),
+    SearchInProgress(SearchInProgressState),
     SearchComplete(SearchState),
     ReplaceComplete(ReplaceState),
 }
@@ -124,10 +130,11 @@ macro_rules! complete_state_impl {
 
 impl Results {
     // TODO: refactor this with mut version below
+    #[allow(dead_code)]
     pub fn search_results(&mut self) -> &SearchState {
         match self {
-            Results::SearchInProgress(results) => results,
-            Results::SearchComplete(results) => results,
+            Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
+            Results::SearchComplete(search_state) => search_state,
             _ => panic!(
                 "Expected SearchInProgress or SearchComplete, found {}",
                 self.name()
@@ -137,13 +144,21 @@ impl Results {
 
     pub fn search_results_mut(&mut self) -> &mut SearchState {
         match self {
-            Results::SearchInProgress(results) => results,
-            Results::SearchComplete(results) => results,
+            Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
+            Results::SearchComplete(search_state) => search_state,
             _ => panic!(
                 "Expected SearchInProgress or SearchComplete, found {}",
                 self.name()
             ),
         }
+    }
+
+    pub fn search_in_progress(&self) -> &SearchInProgressState {
+        complete_state_impl!(self, SearchInProgress)
+    }
+
+    pub fn search_in_progress_mut(&mut self) -> &mut SearchInProgressState {
+        complete_state_impl!(self, SearchInProgress)
     }
 
     pub fn search_complete(&self) -> &SearchState {
@@ -174,16 +189,6 @@ pub enum FieldName {
 pub struct SearchField {
     pub name: FieldName,
     pub field: Arc<RwLock<Field>>,
-}
-
-impl SearchField {
-    #[allow(dead_code)]
-    fn set_error(
-        &mut self,
-        error: String,
-    ) -> Result<(), std::sync::PoisonError<std::sync::RwLockWriteGuard<'_, Field>>> {
-        self.field.write().map(|mut field| field.set_error(error))
-    }
 }
 
 pub const NUM_SEARCH_FIELDS: usize = 4;
@@ -356,7 +361,15 @@ impl App {
         }
     }
 
+    pub fn cancel_search(&mut self) {
+        if let Results::SearchInProgress(SearchInProgressState { handle, .. }) = &self.results {
+            handle.abort();
+        }
+        self.results = Results::NotStarted;
+    }
+
     pub fn reset(&mut self) {
+        self.cancel_search();
         *self = Self::new(
             Some(self.directory.clone()),
             self.include_hidden,
@@ -380,13 +393,16 @@ impl App {
                         assert_eq!(self.current_screen, CurrentScreen::Search);
                     }
                     Some(parsed_fields) => {
-                        self.results = Results::SearchInProgress(SearchState {
-                            results: vec![],
+                        let handle = self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
+                        self.results = Results::SearchInProgress(SearchInProgressState {
+                            search_state: SearchState {
+                                results: vec![],
+                                selected: 0,
+                            },
                             last_render: Instant::now(),
-                            selected: 0,
+                            handle,
                         });
                         self.current_screen = CurrentScreen::Confirmation;
-                        self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
                     }
                 };
                 EventHandlingResult {
@@ -395,13 +411,20 @@ impl App {
                 }
             }
             AppEvent::AddSearchResult(result) => {
-                self.results.search_results_mut().results.push(result);
-
                 let mut rerender = false;
-                if self.results.search_results().last_render.elapsed() >= Duration::from_millis(100)
+                if let Results::SearchInProgress(SearchInProgressState {
+                    search_state: SearchState { results, .. },
+                    ..
+                }) = &mut self.results
                 {
-                    rerender = true;
-                    self.results.search_results_mut().last_render = Instant::now();
+                    results.push(result);
+
+                    if self.results.search_in_progress().last_render.elapsed()
+                        >= Duration::from_millis(100)
+                    {
+                        rerender = true;
+                        self.results.search_in_progress_mut().last_render = Instant::now();
+                    }
                 }
                 EventHandlingResult {
                     exit: false,
@@ -409,14 +432,14 @@ impl App {
                 }
             }
             AppEvent::SearchCompleted => {
-                match mem::replace(&mut self.results, Results::NotStarted) {
-                    Results::SearchInProgress(search_state) => {
+                if let Results::SearchInProgress(SearchInProgressState { search_state, .. }) =
+                    mem::replace(&mut self.results, Results::NotStarted)
+                {
+                    // If not on confirmation screen we've probably gone back to search screen so do nothing
+                    if self.current_screen == CurrentScreen::Confirmation {
                         self.results = Results::SearchComplete(search_state);
-                        self.app_event_sender.send(AppEvent::Rerender).unwrap();
                     }
-                    _ => {
-                        panic!("Expected SearchInProgress");
-                    }
+                    self.app_event_sender.send(AppEvent::Rerender).unwrap();
                 }
                 EventHandlingResult {
                     exit: false,
@@ -464,6 +487,7 @@ impl App {
                 self.results.search_results_mut().move_selected_down();
             }
             (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                // TODO: need to fix issue where screen gets out of sync with state
                 self.results.search_results_mut().move_selected_up();
             }
             (KeyCode::Char(' '), _) => {
@@ -478,6 +502,7 @@ impl App {
                     .unwrap();
             }
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
+                self.cancel_search();
                 self.current_screen = CurrentScreen::Search;
                 self.app_event_sender.send(AppEvent::Rerender).unwrap();
             }
@@ -591,7 +616,7 @@ impl App {
         )))
     }
 
-    pub fn update_search_results(&mut self, parsed_fields: ParsedFields) {
+    pub fn update_search_results(&mut self, parsed_fields: ParsedFields) -> JoinHandle<()> {
         let walker = WalkBuilder::new(&self.directory)
             .hidden(!self.include_hidden)
             .filter_entry(|entry| entry.file_name() != ".git")
@@ -623,8 +648,9 @@ impl App {
                 })
             });
 
-            app_event_sender.send(AppEvent::SearchCompleted).unwrap();
-        });
+            // if err this is likely because state was reset, so we can ignore
+            let _ = app_event_sender.send(AppEvent::SearchCompleted);
+        })
     }
 
     pub fn perform_replacement(&mut self) {

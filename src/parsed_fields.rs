@@ -64,9 +64,13 @@ impl ParsedFields {
                                 self.replacement_if_match(path.to_path_buf(), line, line_number)
                             {
                                 error!("Pushing result"); // TODO: remove this and other unneeded logs
-                                self.app_event_sender
-                                    .send(AppEvent::AddSearchResult(result))
-                                    .unwrap();
+                                let send_result = self
+                                    .app_event_sender
+                                    .send(AppEvent::AddSearchResult(result));
+                                if send_result.is_err() {
+                                    // likely state reset, thread about to be killed
+                                    return;
+                                }
                             }
                         }
                         Err(err) => {
