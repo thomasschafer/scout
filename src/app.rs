@@ -13,6 +13,7 @@ use std::{
         Arc, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
         RwLockWriteGuard,
     },
+    time::{Duration, Instant},
 };
 use tokio::sync::mpsc::UnboundedSender;
 
@@ -48,7 +49,8 @@ pub struct SearchResult {
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchState {
     pub results: Vec<SearchResult>,
-    pub selected: usize, // TODO: allow for selection of ranges
+    pub last_render: Instant, // TODO: this should only be present in SearchInProgress
+    pub selected: usize,      // TODO: allow for selection of ranges
 }
 
 impl SearchState {
@@ -134,6 +136,18 @@ macro_rules! complete_state_impl {
 }
 
 impl Results {
+    // TODO: refactor this with mut version below
+    pub fn search_results(&mut self) -> &SearchState {
+        match self {
+            Results::SearchInProgress(results) => results,
+            Results::SearchComplete(results) => results,
+            _ => panic!(
+                "Expected SearchInProgress or SearchComplete, found {}",
+                self.name()
+            ),
+        }
+    }
+
     pub fn search_results_mut(&mut self) -> &mut SearchState {
         match self {
             Results::SearchInProgress(results) => results,
@@ -329,7 +343,7 @@ pub enum SearchType {
 pub enum AppEvent {
     Rerender,
     PerformSearch,
-    SearchComplete,
+    // AddSearchResult, // TODO: use this to move work off the main thread
     PerformReplacement,
 }
 
@@ -337,6 +351,7 @@ pub enum AppEvent {
 #[derive(Debug)]
 pub enum BackgroundProcessingEvent {
     HandleSearchResult(PathBuf),
+    SearchCompleted,
 }
 
 pub struct App {
@@ -403,16 +418,6 @@ impl App {
             AppEvent::PerformSearch => {
                 self.update_search_results().await.unwrap();
             }
-            AppEvent::SearchComplete => {
-                match mem::replace(&mut self.results, Results::NotStarted) {
-                    Results::SearchInProgress(search_state) => {
-                        self.results = Results::SearchComplete(search_state);
-                    }
-                    _ => {
-                        panic!("Expected SearchInProgress");
-                    }
-                }
-            }
             AppEvent::PerformReplacement => {
                 self.perform_replacement();
                 self.current_screen = CurrentScreen::Results;
@@ -424,6 +429,17 @@ impl App {
     pub fn handle_background_processing_event(&mut self, event: BackgroundProcessingEvent) {
         match event {
             BackgroundProcessingEvent::HandleSearchResult(path) => self.handle_path(&path),
+            BackgroundProcessingEvent::SearchCompleted => {
+                match mem::replace(&mut self.results, Results::NotStarted) {
+                    Results::SearchInProgress(search_state) => {
+                        self.results = Results::SearchComplete(search_state);
+                        self.event_sender.send(AppEvent::Rerender).unwrap();
+                    }
+                    _ => {
+                        panic!("Expected SearchInProgress");
+                    }
+                }
+            }
         }
     }
 
@@ -439,6 +455,7 @@ impl App {
                     Some(parsed_fields) => {
                         self.results = Results::SearchInProgress(SearchState {
                             results: vec![],
+                            last_render: Instant::now(),
                             selected: 0,
                         });
                         self.parsed_fields = Some(parsed_fields.clone());
@@ -468,14 +485,14 @@ impl App {
         match (key.code, key.modifiers) {
             (KeyCode::Char('j') | KeyCode::Down, _)
             | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.results.search_complete_mut().move_selected_down();
+                self.results.search_results_mut().move_selected_down();
             }
             (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-                self.results.search_complete_mut().move_selected_up();
+                self.results.search_results_mut().move_selected_up();
             }
             (KeyCode::Char(' '), _) => {
                 self.results
-                    .search_complete_mut()
+                    .search_results_mut()
                     .toggle_selected_inclusion();
             }
             (KeyCode::Enter, _) => {
@@ -544,10 +561,6 @@ impl App {
     }
 
     fn handle_path(&mut self, path: &Path) {
-        if self.ignore_file(path) {
-            return;
-        }
-
         if let Some(p) = self.parsed_fields.clone().unwrap().path_pattern {
             // TODO: don't clone
             let matches_pattern = p.is_match(self.relative_path(path).as_str());
@@ -566,8 +579,15 @@ impl App {
                             if let Some(result) =
                                 self.replacement_if_match(line, path.to_path_buf(), line_number)
                             {
-                                error!("Pushing result");
+                                error!("Pushing result"); // TODO: remove this and other unneeded logs
                                 self.results.search_results_mut().results.push(result);
+
+                                if self.results.search_results().last_render.elapsed()
+                                    >= Duration::from_millis(100)
+                                {
+                                    self.event_sender.send(AppEvent::Rerender).unwrap();
+                                    self.results.search_results_mut().last_render = Instant::now();
+                                }
                             }
                         }
                         Err(err) => {
@@ -626,7 +646,6 @@ impl App {
             .filter_entry(|entry| entry.file_name() != ".git")
             .build_parallel();
 
-        let event_sender = self.event_sender.clone();
         let background_processing_sender = self.background_processing_sender.clone();
 
         tokio::spawn(async move {
@@ -643,6 +662,10 @@ impl App {
                         return WalkState::Continue;
                     };
 
+                    if Self::ignore_file(entry.path()) {
+                        return WalkState::Continue;
+                    }
+
                     sender
                         .send(BackgroundProcessingEvent::HandleSearchResult(
                             entry.path().to_path_buf(),
@@ -653,8 +676,9 @@ impl App {
                 })
             });
 
-            // TODO: we need to send this only after all HandleSearchResult have been processed
-            event_sender.send(AppEvent::SearchComplete).unwrap();
+            background_processing_sender
+                .send(BackgroundProcessingEvent::SearchCompleted)
+                .unwrap();
         });
 
         Ok(())
@@ -790,7 +814,7 @@ impl App {
         replace_start(path, current_dir, ".")
     }
 
-    fn ignore_file(&self, path: &Path) -> bool {
+    fn ignore_file(path: &Path) -> bool {
         if let Some(ext) = path.extension() {
             if let Some(ext_str) = ext.to_str() {
                 if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {

@@ -1,5 +1,4 @@
 use crate::app::AppEvent;
-use anyhow::anyhow;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;

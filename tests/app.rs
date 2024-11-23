@@ -108,6 +108,7 @@ async fn test_back_from_results() {
             kind: KeyEventKind::Press,
             state: KeyEventState::NONE,
         })
+        .await // TODO: do the same for other tests
         .unwrap();
     assert!(!exit);
     assert_eq!(app.search_fields.search().text, "foo");

@@ -1,9 +1,8 @@
 #![feature(mapped_lock_guards)]
 
-use app::BackgroundProcessingEvent;
 use clap::Parser;
-use log::LevelFilter;
-use logging::{setup_logging, DEFAULT_LOG_LEVEL};
+use log::error;
+use logging::setup_logging;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, str::FromStr};
 use tokio::sync::mpsc;
@@ -63,9 +62,9 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let app_events_handler = EventHandler::new();
-    let (bp_sender, mut bp_receiver) = mpsc::unbounded_channel::<BackgroundProcessingEvent>();
+    let (bg_proc_sender, mut bp_proc_receiver) = mpsc::unbounded_channel();
     let app_event_sender = app_events_handler.app_event_sender.clone();
-    let mut app = App::new(directory, args.hidden, app_event_sender, bp_sender);
+    let mut app = App::new(directory, args.hidden, app_event_sender, bg_proc_sender);
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
@@ -76,6 +75,7 @@ async fn main() -> anyhow::Result<()> {
     while app.running {
         tokio::select! {
             Some(event) = tui.events.receiver.recv() => {
+                error!("[E] Processing from events.receiver {:?}", event);
                 let exit = match event {
                     Event::Key(key_event) => app.handle_key_events(&key_event)?,
                     Event::Mouse(_) => false,
@@ -87,7 +87,10 @@ async fn main() -> anyhow::Result<()> {
                     break;
                 }
             }
-            Some(event) = bp_receiver.recv() => app.handle_background_processing_event(event)
+            Some(event) = bp_proc_receiver.recv() => {
+                error!("[BG] Processing from bp_proc_receiver {:?}", event);
+                app.handle_background_processing_event(event);
+            }
         }
     }
 
