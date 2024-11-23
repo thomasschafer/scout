@@ -45,6 +45,11 @@ pub struct EventHandler {
     pub app_event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
+pub struct EventHandlingResult {
+    pub exit: bool,
+    pub rerender: bool,
+}
+
 impl EventHandler {
     pub fn new() -> Self {
         let (sender, receiver) = mpsc::unbounded_channel();

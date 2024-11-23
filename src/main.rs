@@ -2,6 +2,7 @@
 
 use anyhow::anyhow;
 use clap::Parser;
+use event::EventHandlingResult;
 use logging::setup_logging;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::{io, path::PathBuf, str::FromStr};
@@ -73,7 +74,7 @@ async fn main() -> anyhow::Result<()> {
 
     while app.running {
         // error!("[E] Processing from events.receiver {:?}", event);
-        let exit = match tui
+        let EventHandlingResult { exit, rerender } = match tui
             .events
             .receiver
             .recv()
@@ -81,11 +82,19 @@ async fn main() -> anyhow::Result<()> {
             .ok_or(anyhow!("Event stream ended unexpectedly"))?
         {
             Event::Key(key_event) => app.handle_key_events(&key_event)?,
-            Event::Mouse(_) => false,
-            Event::Resize(_, _) => false,
+            Event::Mouse(_) => EventHandlingResult {
+                exit: false,
+                rerender: true,
+            },
+            Event::Resize(_, _) => EventHandlingResult {
+                exit: false,
+                rerender: true,
+            },
             Event::App(app_event) => app.handle_app_event(app_event).await,
         };
-        tui.draw(&mut app)?;
+        if rerender {
+            tui.draw(&mut app)?;
+        }
         if exit {
             break;
         }

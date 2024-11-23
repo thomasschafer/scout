@@ -22,6 +22,7 @@ use crate::{
     fields::{CheckboxField, Field, TextField},
     parsed_fields::{ParsedFields, SearchType},
     utils::relative_path_from,
+    EventHandlingResult,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -363,10 +364,14 @@ impl App {
         );
     }
 
-    pub async fn handle_app_event(&mut self, event: AppEvent) -> bool {
+    pub async fn handle_app_event(&mut self, event: AppEvent) -> EventHandlingResult {
         match event {
             AppEvent::Rerender => {
                 error!("In AppEvent::Rerender");
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
             }
             AppEvent::PerformSearch => {
                 match self.validate_fields().unwrap() {
@@ -384,15 +389,23 @@ impl App {
                         self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
                     }
                 };
-                self.app_event_sender.send(AppEvent::Rerender).unwrap();
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
             }
             AppEvent::AddSearchResult(result) => {
                 self.results.search_results_mut().results.push(result);
 
+                let mut rerender = false;
                 if self.results.search_results().last_render.elapsed() >= Duration::from_millis(100)
                 {
-                    self.app_event_sender.send(AppEvent::Rerender).unwrap();
+                    rerender = true;
                     self.results.search_results_mut().last_render = Instant::now();
+                }
+                EventHandlingResult {
+                    exit: false,
+                    rerender,
                 }
             }
             AppEvent::SearchCompleted => {
@@ -405,13 +418,20 @@ impl App {
                         panic!("Expected SearchInProgress");
                     }
                 }
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
             }
             AppEvent::PerformReplacement => {
                 self.perform_replacement();
                 self.current_screen = CurrentScreen::Results;
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
             }
-        };
-        false
+        }
     }
 
     fn handle_key_searching(&mut self, key: &KeyEvent) -> bool {
@@ -492,17 +512,28 @@ impl App {
         exit
     }
 
-    pub fn handle_key_events(&mut self, key: &KeyEvent) -> anyhow::Result<bool> {
+    pub fn handle_key_events(&mut self, key: &KeyEvent) -> anyhow::Result<EventHandlingResult> {
         if key.kind == KeyEventKind::Release {
-            return Ok(false);
+            return Ok(EventHandlingResult {
+                exit: false,
+                rerender: true,
+            });
         }
 
         // TODO: why doesn't this work while search (or replacement?) are being completed? Also ignore other keys, i.e. don't allow them to queue up
         match (key.code, key.modifiers) {
-            (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => return Ok(true),
+            (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                return Ok(EventHandlingResult {
+                    exit: true,
+                    rerender: true,
+                })
+            }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 self.reset();
-                return Ok(false);
+                return Ok(EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                });
             }
             (_, _) => {}
         }
@@ -513,7 +544,10 @@ impl App {
             CurrentScreen::PerformingReplacement => false,
             CurrentScreen::Results => self.handle_key_results(key),
         };
-        Ok(exit)
+        Ok(EventHandlingResult {
+            exit,
+            rerender: true,
+        })
     }
 
     fn validate_fields(&self) -> anyhow::Result<Option<ParsedFields>> {
