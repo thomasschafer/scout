@@ -163,7 +163,7 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             "Results: {} {}",
             num_results,
             if is_complete {
-                "[Search complete]" // TODO: remove this
+                "[Search complete]" // TODO: don't allow users to continue if still searching
             } else {
                 "[Still searching...]"
             }
@@ -184,12 +184,6 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     let search_results = results_iter.flat_map(|(idx, result)| {
         let (old_line, new_line) = line_diff(result.line.as_str(), result.replacement.as_str());
 
-        let file_path = format!(
-            "[{}] {}:{}",
-            if result.included { 'x' } else { ' ' },
-            app.relative_path(&result.path),
-            result.line_number
-        );
         let file_path_style = if search_results.selected == idx {
             Style::new().bg(if result.included {
                 Color::Blue
@@ -199,9 +193,34 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         } else {
             Style::new()
         };
+        let right_content = format!(" ({})", idx);
+        let right_content_len = right_content.len() as u16;
+        let left_content = format!(
+            "[{}] {}:{}",
+            if result.included { 'x' } else { ' ' },
+            app.relative_path(&result.path),
+            result.line_number,
+        );
+        let left_content_trimmed = left_content
+            .chars()
+            .take(list_area.width.saturating_sub(right_content_len) as usize)
+            .collect::<String>();
+        let left_content_trimmed_len = left_content_trimmed.len() as u16;
+        let spacers = " ".repeat(
+            list_area
+                .width
+                .saturating_sub(left_content_trimmed_len + right_content_len) as usize,
+        );
+
+        let file_path = Line::from(vec![
+            Span::raw(left_content_trimmed),
+            Span::raw(spacers),
+            Span::raw(right_content),
+        ])
+        .style(file_path_style);
 
         [
-            ListItem::new(Text::styled(file_path, file_path_style)),
+            ListItem::new(file_path),
             ListItem::new(diff_to_line(old_line)),
             ListItem::new(diff_to_line(new_line)),
             ListItem::new(""),
