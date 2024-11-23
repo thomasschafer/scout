@@ -29,5 +29,8 @@ jobs:
     - name: Build
       run: cargo build --verbose
 
+    - name: Lint
+      run: cargo clippy
+
     - name: Run tests
       run: cargo test --verbose
