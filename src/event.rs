@@ -1,7 +1,33 @@
-use crate::app::AppEvent;
+use std::path::PathBuf;
+
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReplaceResult {
+    Success,
+    Error(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchResult {
+    pub path: PathBuf,
+    pub line_number: usize,
+    pub line: String,
+    pub replacement: String,
+    pub included: bool,
+    pub replace_result: Option<ReplaceResult>,
+}
+
+#[derive(Debug)]
+pub enum AppEvent {
+    Rerender,
+    PerformSearch,
+    AddSearchResult(SearchResult),
+    SearchCompleted,
+    PerformReplacement,
+}
 
 #[derive(Debug)]
 pub enum Event {

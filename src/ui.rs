@@ -12,10 +12,8 @@ use similar::{Change, ChangeTag, TextDiff};
 use std::{cmp::min, iter};
 
 use crate::{
-    app::{
-        App, CurrentScreen, FieldName, ReplaceResult, Results, SearchField, SearchResult,
-        NUM_SEARCH_FIELDS,
-    },
+    app::{App, CurrentScreen, FieldName, Results, SearchField, NUM_SEARCH_FIELDS},
+    event::{ReplaceResult, SearchResult},
     utils::group_by,
 };
 

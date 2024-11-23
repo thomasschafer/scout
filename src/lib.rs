@@ -4,6 +4,7 @@ pub mod app;
 pub mod event;
 pub mod fields;
 pub mod logging;
+pub mod parsed_fields;
 pub mod ui;
 pub mod utils;
 

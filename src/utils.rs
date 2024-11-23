@@ -9,6 +9,12 @@ pub fn replace_start(s: String, from: &str, to: &str) -> String {
     }
 }
 
+pub fn relative_path_from(root_dir: &Path, path: &Path) -> String {
+    let root_dir = root_dir.to_str().unwrap();
+    let path = path.to_str().unwrap().to_owned();
+    replace_start(path, root_dir, ".")
+}
+
 pub fn group_by<I, T, F>(iter: I, predicate: F) -> Vec<Vec<T>>
 where
     I: IntoIterator<Item = T>,
