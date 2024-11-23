@@ -280,7 +280,7 @@ impl Field {
         }
     }
 
-    pub fn render(&self, frame: &mut Frame, area: Rect, title: String, highlighted: bool) {
+    pub fn render(&self, frame: &mut Frame<'_>, area: Rect, title: String, highlighted: bool) {
         let mut block = Block::bordered();
         if highlighted {
             block = block.border_style(Style::new().green());

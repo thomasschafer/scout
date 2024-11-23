@@ -28,7 +28,7 @@ impl FieldName {
     }
 }
 
-fn render_search_view(frame: &mut Frame, app: &App, rect: Rect) {
+fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
@@ -128,7 +128,7 @@ pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Di
     (old_spans, new_spans)
 }
 
-fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
+fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
@@ -189,7 +189,7 @@ fn render_confirmation_view(frame: &mut Frame, app: &App, rect: Rect) {
     frame.render_widget(List::new(search_results), list_area);
 }
 
-fn render_results_view(frame: &mut Frame, app: &App, rect: Rect) {
+fn render_results_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
@@ -299,8 +299,8 @@ fn center(area: Rect, horizontal: Constraint, vertical: Constraint) -> Rect {
     area
 }
 
-fn render_loading_view(text: String) -> impl Fn(&mut Frame, &App, Rect) {
-    move |frame: &mut Frame, _app: &App, rect: Rect| {
+fn render_loading_view(text: String) -> impl Fn(&mut Frame<'_>, &App, Rect) {
+    move |frame: &mut Frame<'_>, _app: &App, rect: Rect| {
         let [area] = Layout::vertical([Constraint::Length(4)])
             .flex(Flex::Center)
             .areas(rect);
@@ -334,9 +334,9 @@ fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListIt
     .map(|(s, style)| ListItem::new(Text::styled(s, style)))
 }
 
-type RenderFn = Box<dyn Fn(&mut Frame, &App, Rect)>;
+type RenderFn = Box<dyn Fn(&mut Frame<'_>, &App, Rect)>;
 
-pub fn render(app: &App, frame: &mut Frame) {
+pub fn render(app: &App, frame: &mut Frame<'_>) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
