@@ -1,7 +1,6 @@
-use std::path::PathBuf;
-
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
 use crate::app::SearchState;
@@ -26,9 +25,13 @@ pub struct SearchResult {
 pub enum AppEvent {
     Rerender,
     PerformSearch,
+    PerformReplacement(SearchState),
+}
+
+#[derive(Debug)]
+pub enum BackgroundProcessingEvent {
     AddSearchResult(SearchResult),
     SearchCompleted,
-    PerformReplacement(SearchState),
 }
 
 #[derive(Debug)]

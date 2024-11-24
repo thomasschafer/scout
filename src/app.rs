@@ -15,10 +15,13 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use tokio::{sync::mpsc::UnboundedSender, task::JoinHandle};
+use tokio::{
+    sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
+    task::JoinHandle,
+};
 
 use crate::{
-    event::{AppEvent, ReplaceResult, SearchResult},
+    event::{AppEvent, BackgroundProcessingEvent, ReplaceResult, SearchResult},
     fields::{CheckboxField, Field, TextField},
     parsed_fields::{ParsedFields, SearchType},
     utils::relative_path_from,
@@ -108,16 +111,28 @@ impl ReplaceState {
 pub struct SearchInProgressState {
     pub search_state: SearchState,
     pub last_render: Instant,
-    pub handle: JoinHandle<()>,
+    pub handle: Option<JoinHandle<()>>,
+    pub processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    pub processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
 }
 
-// #[derive(Debug)]
-// pub enum Results {
-//     NotStarted,
-//     SearchInProgress(SearchInProgressState),
-//     SearchComplete(SearchState),
-//     ReplaceComplete(ReplaceState),
-// }
+impl SearchInProgressState {
+    fn new(
+        processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+        processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
+    ) -> Self {
+        Self {
+            search_state: SearchState {
+                results: vec![],
+                selected: 0,
+            },
+            last_render: Instant::now(),
+            handle: None,
+            processing_sender,
+            processing_receiver,
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum Screen {
@@ -324,9 +339,9 @@ impl App {
 
     pub fn cancel_search(&mut self) {
         if let Screen::SearchProgressing(SearchInProgressState { handle, .. }) =
-            &self.current_screen
+            &mut self.current_screen
         {
-            handle.abort();
+            handle.as_mut().unwrap().abort();
         }
         self.current_screen = Screen::SearchFields;
     }
@@ -340,6 +355,31 @@ impl App {
         );
     }
 
+    pub async fn background_processing_recv(&mut self) -> Option<BackgroundProcessingEvent> {
+        if let Screen::SearchProgressing(SearchInProgressState {
+            processing_receiver,
+            ..
+        }) = &mut self.current_screen
+        {
+            processing_receiver.recv().await
+        } else {
+            None
+        }
+    }
+
+    pub fn background_processing_sender(
+        &mut self,
+    ) -> Option<&mut UnboundedSender<BackgroundProcessingEvent>> {
+        if let Screen::SearchProgressing(SearchInProgressState {
+            processing_sender, ..
+        }) = &mut self.current_screen
+        {
+            Some(processing_sender)
+        } else {
+            None
+        }
+    }
+
     pub async fn handle_app_event(&mut self, event: AppEvent) -> EventHandlingResult {
         match event {
             AppEvent::Rerender => {
@@ -350,20 +390,32 @@ impl App {
                 }
             }
             AppEvent::PerformSearch => {
-                match self.validate_fields().unwrap() {
+                // TODO: this is all pretty messy, can we clean it up?
+                let (processing_sender, processing_receiver) = mpsc::unbounded_channel();
+                match self.validate_fields(processing_sender.clone()).unwrap() {
                     None => {
                         self.current_screen = Screen::SearchFields;
                     }
                     Some(parsed_fields) => {
-                        let handle = self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
-                        self.current_screen = Screen::SearchProgressing(SearchInProgressState {
-                            search_state: SearchState {
-                                results: vec![],
-                                selected: 0,
-                            },
-                            last_render: Instant::now(),
-                            handle,
-                        });
+                        self.current_screen =
+                            Screen::SearchProgressing(SearchInProgressState::new(
+                                processing_sender.clone(),
+                                processing_receiver,
+                            ));
+
+                        let handle = self.update_search_results(parsed_fields);
+
+                        match &mut self.current_screen {
+                            Screen::SearchProgressing(ref mut search_in_progress_state) => {
+                                search_in_progress_state.handle = Some(handle);
+                            }
+                            _ => {
+                                panic!(
+                                    "Expected SearchProgressing, found {:?}",
+                                    self.current_screen
+                                );
+                            }
+                        }
                     }
                 };
                 EventHandlingResult {
@@ -371,7 +423,23 @@ impl App {
                     rerender: true,
                 }
             }
-            AppEvent::AddSearchResult(result) => {
+            AppEvent::PerformReplacement(mut search_state) => {
+                let replace_state = Self::perform_replacement(&mut search_state.results);
+                self.current_screen = Screen::Results(replace_state);
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
+            }
+        }
+    }
+
+    pub fn handle_background_processing_event(
+        &mut self,
+        event: BackgroundProcessingEvent,
+    ) -> EventHandlingResult {
+        match event {
+            BackgroundProcessingEvent::AddSearchResult(result) => {
                 let mut rerender = false;
                 if let Screen::SearchProgressing(search_in_progress_state) =
                     &mut self.current_screen
@@ -389,21 +457,13 @@ impl App {
                     rerender,
                 }
             }
-            AppEvent::SearchCompleted => {
+            BackgroundProcessingEvent::SearchCompleted => {
                 if let Screen::SearchProgressing(SearchInProgressState { search_state, .. }) =
                     mem::replace(&mut self.current_screen, Screen::SearchFields)
                 {
                     self.current_screen = Screen::SearchComplete(search_state);
                     self.app_event_sender.send(AppEvent::Rerender).unwrap();
                 }
-                EventHandlingResult {
-                    exit: false,
-                    rerender: true,
-                }
-            }
-            AppEvent::PerformReplacement(mut search_state) => {
-                let replace_state = Self::perform_replacement(&mut search_state.results);
-                self.current_screen = Screen::Results(replace_state);
                 EventHandlingResult {
                     exit: false,
                     rerender: true,
@@ -515,7 +575,10 @@ impl App {
         })
     }
 
-    fn validate_fields(&self) -> anyhow::Result<Option<ParsedFields>> {
+    fn validate_fields(
+        &self,
+        background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    ) -> anyhow::Result<Option<ParsedFields>> {
         let search_pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
@@ -552,7 +615,7 @@ impl App {
             self.search_fields.replace().text(),
             path_pattern,
             self.directory.clone(),
-            self.app_event_sender.clone(),
+            background_processing_sender.clone(),
         )))
     }
 
@@ -562,7 +625,7 @@ impl App {
             .filter_entry(|entry| entry.file_name() != ".git")
             .build_parallel();
 
-        let app_event_sender = self.app_event_sender.clone();
+        let background_processing_sender = self.background_processing_sender().unwrap().clone();
 
         tokio::spawn(async move {
             walker.run(|| {
@@ -588,8 +651,8 @@ impl App {
                 })
             });
 
-            // if err this is likely because state was reset, so we can ignore
-            let _ = app_event_sender.send(AppEvent::SearchCompleted);
+            // Ignore error: we may have gone back to the previous screen
+            let _ = background_processing_sender.send(BackgroundProcessingEvent::SearchCompleted);
         })
     }
 

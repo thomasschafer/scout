@@ -1,6 +1,5 @@
 #![feature(mapped_lock_guards)]
 
-use anyhow::anyhow;
 use clap::Parser;
 use event::EventHandlingResult;
 use logging::setup_logging;
@@ -73,25 +72,20 @@ async fn main() -> anyhow::Result<()> {
     tui.draw(&mut app)?;
 
     while app.running {
-        // error!("[E] Processing from events.receiver {:?}", event);
-        let EventHandlingResult { exit, rerender } = match tui
-            .events
-            .receiver
-            .recv()
-            .await
-            .ok_or(anyhow!("Event stream ended unexpectedly"))?
-        {
-            Event::Key(key_event) => app.handle_key_events(&key_event)?,
-            Event::Mouse(_) => EventHandlingResult {
-                exit: false,
-                rerender: true,
-            },
-            Event::Resize(_, _) => EventHandlingResult {
-                exit: false,
-                rerender: true,
-            },
-            Event::App(app_event) => app.handle_app_event(app_event).await,
+        let EventHandlingResult { exit, rerender } = tokio::select! {
+            Some(event) = tui.events.receiver.recv() => {
+                match event {
+                    Event::Key(key_event) => app.handle_key_events(&key_event)?,
+                    Event::App(app_event) => app.handle_app_event(app_event).await,
+                    Event::Mouse(_) | Event::Resize(_, _) => EventHandlingResult {
+                        exit: false,
+                        rerender: true,
+                    },
+                }
+            }
+            Some(event) = app.background_processing_recv() => app.handle_background_processing_event(event)
         };
+
         if rerender {
             tui.draw(&mut app)?;
         }

@@ -8,7 +8,7 @@ use std::{
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::{
-    event::{AppEvent, SearchResult},
+    event::{BackgroundProcessingEvent, SearchResult},
     utils::relative_path_from,
 };
 
@@ -18,14 +18,14 @@ pub enum SearchType {
     Fixed(String),
 }
 
-#[derive(Clone, Debug)] // TODO: make this not clone
+#[derive(Clone, Debug)]
 pub struct ParsedFields {
     search_pattern: SearchType,
-    replace_string: String, // self.search_fields.replace().text().as_str())
+    replace_string: String,
     path_pattern: Option<Regex>,
     root_dir: PathBuf,
 
-    app_event_sender: UnboundedSender<AppEvent>,
+    background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
 }
 
 impl ParsedFields {
@@ -34,14 +34,14 @@ impl ParsedFields {
         replace_string: String,
         path_pattern: Option<Regex>,
         root_dir: PathBuf,
-        app_event_sender: UnboundedSender<AppEvent>,
+        background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> Self {
         Self {
             search_pattern,
             replace_string,
             path_pattern,
             root_dir,
-            app_event_sender,
+            background_processing_sender,
         }
     }
 
@@ -65,8 +65,8 @@ impl ParsedFields {
                             {
                                 error!("Pushing result"); // TODO: remove this and other unneeded logs
                                 let send_result = self
-                                    .app_event_sender
-                                    .send(AppEvent::AddSearchResult(result));
+                                    .background_processing_sender
+                                    .send(BackgroundProcessingEvent::AddSearchResult(result)); // TODO: we need to get rid of all of these when state is reset?
                                 if send_result.is_err() {
                                     // likely state reset, thread about to be killed
                                     return;
