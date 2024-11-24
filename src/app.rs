@@ -66,6 +66,28 @@ pub struct ReplaceState {
 }
 
 impl ReplaceState {
+    fn handle_key_results(&mut self, key: &KeyEvent) -> bool {
+        let mut exit = false;
+        match (key.code, key.modifiers) {
+            (KeyCode::Char('j') | KeyCode::Down, _)
+            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
+                self.scroll_replacement_errors_down();
+            }
+            (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
+                self.scroll_replacement_errors_up();
+            }
+            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {} // TODO
+            (KeyCode::PageDown, _) => {}                      // TODO
+            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {} // TODO
+            (KeyCode::PageUp, _) => {}                        // TODO
+            (KeyCode::Enter | KeyCode::Char('q'), _) => {
+                exit = true;
+            }
+            _ => {}
+        };
+        exit
+    }
+
     pub fn scroll_replacement_errors_up(&mut self) {
         if self.replacement_errors_pos == 0 {
             self.replacement_errors_pos = self.errors.len();
@@ -98,36 +120,25 @@ pub struct SearchInProgressState {
 // }
 
 #[derive(Debug)]
-pub enum CurrentScreen {
-    Search,
-    ConfirmationSearchProgressing(SearchInProgressState),
-    ConfirmationSearchComplete(SearchState),
+pub enum Screen {
+    SearchFields,
+    SearchProgressing(SearchInProgressState),
+    SearchComplete(SearchState),
     PerformingReplacement,
     Results(ReplaceState),
 }
 
-impl CurrentScreen {
-    pub fn name(&self) -> String {
+impl Screen {
+    pub fn search_results_mut(&mut self) -> &mut SearchState {
         match self {
-            CurrentScreen::Search => "Search",
-            CurrentScreen::ConfirmationSearchProgressing(_) => "ConfirmationSearchProgressing",
-            CurrentScreen::ConfirmationSearchComplete(_) => "ConfirmationSearchComplete",
-            CurrentScreen::PerformingReplacement => "PerformingReplacement",
-            CurrentScreen::Results(_) => "Results",
+            Screen::SearchProgressing(SearchInProgressState { search_state, .. }) => search_state,
+            Screen::SearchComplete(search_state) => search_state,
+            _ => panic!(
+                "Expected SearchInProgress or SearchComplete, found {:?}",
+                self
+            ),
         }
-        .to_owned()
     }
-
-    // pub fn search_results_mut(&mut self) -> &mut SearchState {
-    //     match self {
-    //         Results::SearchInProgress(SearchInProgressState { search_state, .. }) => search_state,
-    //         Results::SearchComplete(search_state) => search_state,
-    //         _ => panic!(
-    //             "Expected SearchInProgress or SearchComplete, found {}",
-    //             self.name()
-    //         ),
-    //     }
-    // }
 }
 
 #[derive(PartialEq)]
@@ -278,7 +289,7 @@ impl SearchFields {
 }
 
 pub struct App {
-    pub current_screen: CurrentScreen,
+    pub current_screen: Screen,
     pub search_fields: SearchFields,
     pub directory: PathBuf,
     pub include_hidden: bool,
@@ -301,7 +312,7 @@ impl App {
         };
 
         Self {
-            current_screen: CurrentScreen::Search,
+            current_screen: Screen::SearchFields,
             search_fields: SearchFields::with_values("", "", false, ""),
             directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
             include_hidden,
@@ -312,13 +323,12 @@ impl App {
     }
 
     pub fn cancel_search(&mut self) {
-        if let CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
-            handle, ..
-        }) = &self.current_screen
+        if let Screen::SearchProgressing(SearchInProgressState { handle, .. }) =
+            &self.current_screen
         {
             handle.abort();
         }
-        self.current_screen = CurrentScreen::Search;
+        self.current_screen = Screen::SearchFields;
     }
 
     pub fn reset(&mut self) {
@@ -342,19 +352,18 @@ impl App {
             AppEvent::PerformSearch => {
                 match self.validate_fields().unwrap() {
                     None => {
-                        self.current_screen = CurrentScreen::Search;
+                        self.current_screen = Screen::SearchFields;
                     }
                     Some(parsed_fields) => {
                         let handle = self.update_search_results(parsed_fields); // TODO: we need to be able to kill the thread this kicks off on reset or back
-                        self.current_screen =
-                            CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
-                                search_state: SearchState {
-                                    results: vec![],
-                                    selected: 0,
-                                },
-                                last_render: Instant::now(),
-                                handle,
-                            });
+                        self.current_screen = Screen::SearchProgressing(SearchInProgressState {
+                            search_state: SearchState {
+                                results: vec![],
+                                selected: 0,
+                            },
+                            last_render: Instant::now(),
+                            handle,
+                        });
                     }
                 };
                 EventHandlingResult {
@@ -364,7 +373,7 @@ impl App {
             }
             AppEvent::AddSearchResult(result) => {
                 let mut rerender = false;
-                if let CurrentScreen::ConfirmationSearchProgressing(search_in_progress_state) =
+                if let Screen::SearchProgressing(search_in_progress_state) =
                     &mut self.current_screen
                 {
                     search_in_progress_state.search_state.results.push(result);
@@ -381,12 +390,10 @@ impl App {
                 }
             }
             AppEvent::SearchCompleted => {
-                if let CurrentScreen::ConfirmationSearchProgressing(SearchInProgressState {
-                    search_state,
-                    ..
-                }) = mem::replace(&mut self.current_screen, CurrentScreen::Search)
+                if let Screen::SearchProgressing(SearchInProgressState { search_state, .. }) =
+                    mem::replace(&mut self.current_screen, Screen::SearchFields)
                 {
-                    self.current_screen = CurrentScreen::ConfirmationSearchComplete(search_state);
+                    self.current_screen = Screen::SearchComplete(search_state);
                     self.app_event_sender.send(AppEvent::Rerender).unwrap();
                 }
                 EventHandlingResult {
@@ -395,8 +402,11 @@ impl App {
                 }
             }
             AppEvent::PerformReplacement => {
-                self.perform_replacement();
-                self.current_screen = CurrentScreen::Results;
+                if let Screen::SearchComplete(search_state) = &mut self.current_screen {
+                    let replace_state = Self::perform_replacement(&mut search_state.results);
+                    self.current_screen = Screen::PerformingReplacement;
+                    self.current_screen = Screen::Results(replace_state);
+                }
                 EventHandlingResult {
                     exit: false,
                     rerender: true,
@@ -429,60 +439,38 @@ impl App {
     }
 
     fn handle_key_confirmation(&mut self, key: &KeyEvent) -> bool {
+        let search_is_progressing = matches!(self.current_screen, Screen::SearchProgressing(_));
         match (key.code, key.modifiers) {
             (KeyCode::Char('j') | KeyCode::Down, _)
             | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.results.search_results_mut().move_selected_down();
+                self.current_screen
+                    .search_results_mut()
+                    .move_selected_down();
             }
             (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
                 // TODO: need to fix issue where screen gets out of sync with state
-                self.results.search_results_mut().move_selected_up();
+                self.current_screen.search_results_mut().move_selected_up();
             }
             (KeyCode::Char(' '), _) => {
-                self.results
+                self.current_screen
                     .search_results_mut()
                     .toggle_selected_inclusion();
             }
             (KeyCode::Enter, _) => {
-                self.current_screen = CurrentScreen::PerformingReplacement;
-                self.app_event_sender
-                    .send(AppEvent::PerformReplacement)
-                    .unwrap();
+                if !search_is_progressing {
+                    self.app_event_sender
+                        .send(AppEvent::PerformReplacement)
+                        .unwrap();
+                }
             }
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
                 self.cancel_search();
-                self.current_screen = CurrentScreen::Search;
+                self.current_screen = Screen::SearchFields;
                 self.app_event_sender.send(AppEvent::Rerender).unwrap();
             }
             _ => {}
         };
         false
-    }
-
-    fn handle_key_results(&mut self, key: &KeyEvent) -> bool {
-        let mut exit = false;
-        match (key.code, key.modifiers) {
-            (KeyCode::Char('j') | KeyCode::Down, _)
-            | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
-                self.results
-                    .replace_complete_mut()
-                    .scroll_replacement_errors_down();
-            }
-            (KeyCode::Char('k') | KeyCode::Up, _) | (KeyCode::Char('p'), KeyModifiers::CONTROL) => {
-                self.results
-                    .replace_complete_mut()
-                    .scroll_replacement_errors_up();
-            }
-            (KeyCode::Char('d'), KeyModifiers::CONTROL) => {} // TODO
-            (KeyCode::PageDown, _) => {}                      // TODO
-            (KeyCode::Char('u'), KeyModifiers::CONTROL) => {} // TODO
-            (KeyCode::PageUp, _) => {}                        // TODO
-            (KeyCode::Enter | KeyCode::Char('q'), _) => {
-                exit = true;
-            }
-            _ => {}
-        };
-        exit
     }
 
     pub fn handle_key_events(&mut self, key: &KeyEvent) -> anyhow::Result<EventHandlingResult> {
@@ -511,11 +499,13 @@ impl App {
             (_, _) => {}
         }
 
-        let exit = match self.current_screen {
-            CurrentScreen::Search => self.handle_key_searching(key),
-            CurrentScreen::Confirmation => self.handle_key_confirmation(key),
-            CurrentScreen::PerformingReplacement => false,
-            CurrentScreen::Results => self.handle_key_results(key),
+        let exit = match &mut self.current_screen {
+            Screen::SearchFields => self.handle_key_searching(key),
+            Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
+                self.handle_key_confirmation(key)
+            }
+            Screen::PerformingReplacement => false,
+            Screen::Results(replace_state) => replace_state.handle_key_results(key),
         };
         Ok(EventHandlingResult {
             exit,
@@ -601,11 +591,8 @@ impl App {
         })
     }
 
-    pub fn perform_replacement(&mut self) {
-        for (path, results) in &self
-            .results
-            .search_complete_mut()
-            .results
+    pub fn perform_replacement(results: &mut [SearchResult]) -> ReplaceState {
+        for (path, results) in &results
             .iter_mut()
             .filter(|res| res.included)
             .chunk_by(|res| res.path.clone())
@@ -618,14 +605,15 @@ impl App {
             }
         }
 
-        // TODO (test): add tests for this
+        Self::calculate_statistics(results)
+    }
+
+    fn calculate_statistics(results: &[SearchResult]) -> ReplaceState {
         let mut num_successes = 0;
         let mut num_ignored = 0;
         let mut errors = vec![];
 
-        self.results
-            .search_complete()
-            .results
+        results
             .iter()
             .for_each(|res| match (res.included, &res.replace_result) {
                 (false, _) => {
@@ -646,17 +634,17 @@ impl App {
                 }
             });
 
-        self.results = Results::ReplaceComplete(ReplaceState {
+        ReplaceState {
             num_successes,
             num_ignored,
             errors,
             replacement_errors_pos: 0,
-        });
+        }
     }
 
     fn replace_in_file(
         file_path: PathBuf,
-        results: &mut [&mut SearchResult],
+        results: &mut Vec<&mut SearchResult>,
     ) -> anyhow::Result<()> {
         let mut line_map: HashMap<_, _> =
             HashMap::from_iter(results.iter_mut().map(|res| (res.line_number, res)));
@@ -701,5 +689,107 @@ impl App {
             }
         }
         false
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rand::Rng;
+
+    use super::*;
+    use crate::EventHandler;
+
+    fn random_num() -> usize {
+        let mut rng = rand::thread_rng();
+        rng.gen_range(1..10000)
+    }
+
+    fn success_result() -> SearchResult {
+        SearchResult {
+            path: Path::new("random/file").to_path_buf(),
+            line_number: random_num(),
+            line: "foo".to_owned(),
+            replacement: "bar".to_owned(),
+            included: true,
+            replace_result: Some(ReplaceResult::Success),
+        }
+    }
+
+    fn ignored_result() -> SearchResult {
+        SearchResult {
+            path: Path::new("random/file").to_path_buf(),
+            line_number: random_num(),
+            line: "foo".to_owned(),
+            replacement: "bar".to_owned(),
+            included: false,
+            replace_result: None,
+        }
+    }
+
+    fn error_result() -> SearchResult {
+        SearchResult {
+            path: Path::new("random/file").to_path_buf(),
+            line_number: random_num(),
+            line: "foo".to_owned(),
+            replacement: "bar".to_owned(),
+            included: true,
+            replace_result: Some(ReplaceResult::Error("error".to_owned())),
+        }
+    }
+
+    fn build_test_app(results: Vec<SearchResult>) -> App {
+        let mut app = App::new(None, false, EventHandler::new().app_event_sender);
+        app.current_screen = Screen::SearchComplete(SearchState {
+            results,
+            selected: 0,
+        });
+        app
+    }
+
+    #[test]
+    fn test_calculate_statistics_all_success() {
+        let app = build_test_app(vec![success_result(), success_result(), success_result()]);
+        let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
+            App::calculate_statistics(&search_state.results)
+        } else {
+            panic!("Expected SearchComplete");
+        };
+
+        assert_eq!(
+            stats,
+            ReplaceState {
+                num_successes: 3,
+                num_ignored: 0,
+                errors: vec![],
+                replacement_errors_pos: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn test_calculate_statistics_with_ignores_and_errors() {
+        let error_result = error_result();
+        let app = build_test_app(vec![
+            success_result(),
+            ignored_result(),
+            success_result(),
+            error_result.clone(),
+            ignored_result(),
+        ]);
+        let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
+            App::calculate_statistics(&search_state.results)
+        } else {
+            panic!("Expected SearchComplete");
+        };
+
+        assert_eq!(
+            stats,
+            ReplaceState {
+                num_successes: 2,
+                num_ignored: 2,
+                errors: vec![error_result],
+                replacement_errors_pos: 0,
+            }
+        );
     }
 }
