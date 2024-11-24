@@ -401,12 +401,9 @@ impl App {
                     rerender: true,
                 }
             }
-            AppEvent::PerformReplacement => {
-                if let Screen::SearchComplete(search_state) = &mut self.current_screen {
-                    let replace_state = Self::perform_replacement(&mut search_state.results);
-                    self.current_screen = Screen::PerformingReplacement;
-                    self.current_screen = Screen::Results(replace_state);
-                }
+            AppEvent::PerformReplacement(mut search_state) => {
+                let replace_state = Self::perform_replacement(&mut search_state.results);
+                self.current_screen = Screen::Results(replace_state);
                 EventHandlingResult {
                     exit: false,
                     rerender: true,
@@ -439,7 +436,6 @@ impl App {
     }
 
     fn handle_key_confirmation(&mut self, key: &KeyEvent) -> bool {
-        let search_is_progressing = matches!(self.current_screen, Screen::SearchProgressing(_));
         match (key.code, key.modifiers) {
             (KeyCode::Char('j') | KeyCode::Down, _)
             | (KeyCode::Char('n'), KeyModifiers::CONTROL) => {
@@ -457,10 +453,16 @@ impl App {
                     .toggle_selected_inclusion();
             }
             (KeyCode::Enter, _) => {
-                if !search_is_progressing {
-                    self.app_event_sender
-                        .send(AppEvent::PerformReplacement)
-                        .unwrap();
+                if matches!(self.current_screen, Screen::SearchComplete(_)) {
+                    if let Screen::SearchComplete(search_state) =
+                        mem::replace(&mut self.current_screen, Screen::PerformingReplacement)
+                    {
+                        self.app_event_sender
+                            .send(AppEvent::PerformReplacement(search_state))
+                            .unwrap();
+                    } else {
+                        panic!("Expected SearchComplete, found {:?}", self.current_screen);
+                    }
                 }
             }
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => {

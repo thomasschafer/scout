@@ -4,6 +4,8 @@ use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
 use tokio::sync::mpsc;
 
+use crate::app::SearchState;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReplaceResult {
     Success,
@@ -26,7 +28,7 @@ pub enum AppEvent {
     PerformSearch,
     AddSearchResult(SearchResult),
     SearchCompleted,
-    PerformReplacement,
+    PerformReplacement(SearchState),
 }
 
 #[derive(Debug)]
