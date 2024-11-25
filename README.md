@@ -25,7 +25,7 @@ scooter
 in a terminal to launch Scooter. By default the current directory is used to search and replace in, but you can pass in a directory as the first argument to override this behaviour:
 
 ```sh
-scooter ../foo/bar`
+scooter ../foo/bar
 ```
 
 A set of keymappings will be shown at the bottom of the window: these vary slightly depending on the screen you're on.
