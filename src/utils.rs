@@ -1,3 +1,6 @@
+use anyhow::{anyhow, Result};
+use std::path::{Path, PathBuf};
+
 pub fn replace_start(s: String, from: &str, to: &str) -> String {
     if let Some(stripped) = s.strip_prefix(from) {
         format!("{}{}", to, stripped)
@@ -30,9 +33,23 @@ where
     result
 }
 
+pub fn validate_directory(dir_str: &str) -> Result<PathBuf> {
+    let path = Path::new(dir_str);
+    if path.exists() {
+        Ok(path.to_path_buf())
+    } else {
+        Err(anyhow!(
+            "Directory '{}' does not exist. Please provide a valid directory path.",
+            dir_str
+        ))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn test_replace_start_matching_prefix() {
@@ -123,5 +140,56 @@ mod tests {
             grouped,
             vec![vec!["apple", "app"], vec!["banana", "ban"], vec!["cat"]]
         );
+    }
+
+    fn setup_test_dir() -> TempDir {
+        TempDir::new().unwrap()
+    }
+
+    #[test]
+    fn test_validate_directory_exists() {
+        let temp_dir = setup_test_dir();
+        let dir_path = temp_dir.path().to_str().unwrap();
+
+        let result = validate_directory(dir_path);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), PathBuf::from(dir_path));
+    }
+
+    #[test]
+    fn test_validate_directory_does_not_exist() {
+        let nonexistent_path = "/path/that/definitely/does/not/exist/12345";
+        let result = validate_directory(nonexistent_path);
+
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("does not exist"));
+        assert!(err.contains(nonexistent_path));
+    }
+
+    #[test]
+    fn test_validate_directory_with_nested_structure() {
+        let temp_dir = setup_test_dir();
+        let nested_dir = temp_dir.path().join("nested").join("directory");
+        fs::create_dir_all(&nested_dir).expect("Failed to create nested directories");
+
+        let dir_path = nested_dir.to_str().unwrap();
+        let result = validate_directory(dir_path);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), nested_dir);
+    }
+
+    #[test]
+    fn test_validate_directory_with_special_chars() {
+        let temp_dir = setup_test_dir();
+        let special_dir = temp_dir.path().join("test with spaces and-symbols_!@#$");
+        fs::create_dir(&special_dir).expect("Failed to create directory with special characters");
+
+        let dir_path = special_dir.to_str().unwrap();
+        let result = validate_directory(dir_path);
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), special_dir);
     }
 }
