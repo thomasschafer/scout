@@ -1,8 +1,9 @@
 use clap::Parser;
 use logging::setup_logging;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::{io, path::PathBuf, str::FromStr};
+use std::io;
 use tui::Tui;
+use utils::validate_directory;
 
 use crate::{
     app::App,
@@ -38,7 +39,7 @@ async fn main() -> anyhow::Result<()> {
 
     let directory = match args.directory {
         None => None,
-        Some(d) => Some(PathBuf::from_str(d.as_str())?),
+        Some(d) => Some(validate_directory(&d)?),
     };
 
     let events = EventHandler::new();
