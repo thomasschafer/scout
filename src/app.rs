@@ -1,6 +1,6 @@
 use ignore::{WalkBuilder, WalkState};
 use itertools::Itertools;
-use log::{error, info};
+use log::info;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -382,13 +382,10 @@ impl App {
 
     pub async fn handle_app_event(&mut self, event: AppEvent) -> EventHandlingResult {
         match event {
-            AppEvent::Rerender => {
-                error!("In AppEvent::Rerender");
-                EventHandlingResult {
-                    exit: false,
-                    rerender: true,
-                }
-            }
+            AppEvent::Rerender => EventHandlingResult {
+                exit: false,
+                rerender: true,
+            },
             AppEvent::PerformSearch => {
                 // TODO: this is all pretty messy, can we clean it up?
                 let (processing_sender, processing_receiver) = mpsc::unbounded_channel();

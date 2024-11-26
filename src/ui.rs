@@ -16,7 +16,7 @@ use crate::{
         App, FieldName, ReplaceState, Screen, SearchField, SearchInProgressState, NUM_SEARCH_FIELDS,
     },
     event::{ReplaceResult, SearchResult},
-    utils::group_by,
+    utils::{first_chars, group_by},
 };
 
 impl FieldName {
@@ -184,7 +184,10 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         .take(list_area_height / item_height + 1); // We shouldn't need the +1, but let's keep it in to ensure we have buffer when rendering
 
     let search_results = results_iter.flat_map(|(idx, result)| {
-        let (old_line, new_line) = line_diff(result.line.as_str(), result.replacement.as_str());
+        let width = list_area.width;
+        let before = first_chars(&result.line, width as usize);
+        let after = first_chars(&result.replacement, width as usize);
+        let (old_line, new_line) = line_diff(before, after);
 
         let file_path_style = if search_results.selected == idx {
             Style::new().bg(if result.included {
