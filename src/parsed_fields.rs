@@ -1,3 +1,4 @@
+use content_inspector::{inspect, ContentType};
 use log::{error, warn};
 use regex::Regex;
 use std::{
@@ -60,13 +61,19 @@ impl ParsedFields {
                 for (line_number, line) in reader.lines().enumerate() {
                     match line {
                         Ok(line) => {
-                            if let Some(result) =
-                                self.replacement_if_match(path.to_path_buf(), line, line_number)
-                            {
+                            if let Some(result) = self.replacement_if_match(
+                                path.to_path_buf(),
+                                line.clone(),
+                                line_number,
+                            ) {
+                                // TODO: check the file before reading? Also add tests
+                                if let ContentType::BINARY = inspect(line.as_bytes()) {
+                                    continue;
+                                }
                                 error!("Pushing result"); // TODO: remove this and other unneeded logs
                                 let send_result = self
                                     .background_processing_sender
-                                    .send(BackgroundProcessingEvent::AddSearchResult(result)); // TODO: we need to get rid of all of these when state is reset?
+                                    .send(BackgroundProcessingEvent::AddSearchResult(result));
                                 if send_result.is_err() {
                                     // likely state reset, thread about to be killed
                                     return;
