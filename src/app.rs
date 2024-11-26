@@ -386,40 +386,7 @@ impl App {
                 exit: false,
                 rerender: true,
             },
-            AppEvent::PerformSearch => {
-                // TODO: this is all pretty messy, can we clean it up?
-                let (processing_sender, processing_receiver) = mpsc::unbounded_channel();
-                match self.validate_fields(processing_sender.clone()).unwrap() {
-                    None => {
-                        self.current_screen = Screen::SearchFields;
-                    }
-                    Some(parsed_fields) => {
-                        self.current_screen =
-                            Screen::SearchProgressing(SearchInProgressState::new(
-                                processing_sender.clone(),
-                                processing_receiver,
-                            ));
-
-                        let handle = self.update_search_results(parsed_fields);
-
-                        match &mut self.current_screen {
-                            Screen::SearchProgressing(ref mut search_in_progress_state) => {
-                                search_in_progress_state.handle = Some(handle);
-                            }
-                            _ => {
-                                panic!(
-                                    "Expected SearchProgressing, found {:?}",
-                                    self.current_screen
-                                );
-                            }
-                        }
-                    }
-                };
-                EventHandlingResult {
-                    exit: false,
-                    rerender: true,
-                }
-            }
+            AppEvent::PerformSearch => self.perform_search_if_valid(),
             AppEvent::PerformReplacement(mut search_state) => {
                 let replace_state = Self::perform_replacement(&mut search_state.results);
                 self.current_screen = Screen::Results(replace_state);
@@ -428,6 +395,39 @@ impl App {
                     rerender: true,
                 }
             }
+        }
+    }
+
+    fn perform_search_if_valid(&mut self) -> EventHandlingResult {
+        // TODO: this is all pretty messy, can we clean it up?
+        let (processing_sender, processing_receiver) = mpsc::unbounded_channel();
+
+        match self.validate_fields(processing_sender.clone()).unwrap() {
+            None => {
+                self.current_screen = Screen::SearchFields;
+            }
+            Some(parsed_fields) => {
+                self.current_screen = Screen::SearchProgressing(SearchInProgressState::new(
+                    processing_sender.clone(),
+                    processing_receiver,
+                ));
+
+                let handle = self.update_search_results(parsed_fields);
+
+                match &mut self.current_screen {
+                    Screen::SearchProgressing(ref mut search_in_progress_state) => {
+                        search_in_progress_state.handle = Some(handle);
+                    }
+                    _ => {
+                        // Either search has finished or user has gone back, can ignore
+                    }
+                }
+            }
+        };
+
+        EventHandlingResult {
+            exit: false,
+            rerender: true,
         }
     }
 
