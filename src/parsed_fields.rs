@@ -1,4 +1,5 @@
 use content_inspector::{inspect, ContentType};
+use ignore::{WalkBuilder, WalkParallel};
 use log::{error, warn};
 use regex::Regex;
 use std::{
@@ -24,7 +25,9 @@ pub struct ParsedFields {
     search_pattern: SearchType,
     replace_string: String,
     path_pattern: Option<Regex>,
+    // TODO: `root_dir` and `include_hidden` are duplicated across this and App
     root_dir: PathBuf,
+    include_hidden: bool,
 
     background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
 }
@@ -35,6 +38,7 @@ impl ParsedFields {
         replace_string: String,
         path_pattern: Option<Regex>,
         root_dir: PathBuf,
+        include_hidden: bool,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> Self {
         Self {
@@ -42,6 +46,7 @@ impl ParsedFields {
             replace_string,
             path_pattern,
             root_dir,
+            include_hidden,
             background_processing_sender,
         }
     }
@@ -123,5 +128,12 @@ impl ParsedFields {
             included: true,
             replace_result: None,
         })
+    }
+
+    pub(crate) fn build_walker(&self) -> WalkParallel {
+        WalkBuilder::new(&self.root_dir)
+            .hidden(!self.include_hidden)
+            .filter_entry(|entry| entry.file_name() != ".git")
+            .build_parallel()
     }
 }

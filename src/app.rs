@@ -1,4 +1,4 @@
-use ignore::{WalkBuilder, WalkState};
+use ignore::WalkState;
 use itertools::Itertools;
 use log::info;
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -111,13 +111,14 @@ impl ReplaceState {
 pub struct SearchInProgressState {
     pub search_state: SearchState,
     pub last_render: Instant,
-    pub handle: Option<JoinHandle<()>>,
+    pub handle: JoinHandle<()>,
     pub processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     pub processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
 }
 
 impl SearchInProgressState {
     fn new(
+        handle: JoinHandle<()>,
         processing_sender: UnboundedSender<BackgroundProcessingEvent>,
         processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
     ) -> Self {
@@ -127,7 +128,7 @@ impl SearchInProgressState {
                 selected: 0,
             },
             last_render: Instant::now(),
-            handle: None,
+            handle,
             processing_sender,
             processing_receiver,
         }
@@ -341,7 +342,7 @@ impl App {
         if let Screen::SearchProgressing(SearchInProgressState { handle, .. }) =
             &mut self.current_screen
         {
-            handle.as_mut().unwrap().abort();
+            handle.abort();
         }
         self.current_screen = Screen::SearchFields;
     }
@@ -367,6 +368,7 @@ impl App {
         }
     }
 
+    #[allow(dead_code)]
     pub fn background_processing_sender(
         &mut self,
     ) -> Option<&mut UnboundedSender<BackgroundProcessingEvent>> {
@@ -398,30 +400,28 @@ impl App {
         }
     }
 
+    // TODO: add tests for this
     fn perform_search_if_valid(&mut self) -> EventHandlingResult {
-        // TODO: this is all pretty messy, can we clean it up?
-        let (processing_sender, processing_receiver) = mpsc::unbounded_channel();
+        let (background_processing_sender, background_processing_receiver) =
+            mpsc::unbounded_channel();
 
-        match self.validate_fields(processing_sender.clone()).unwrap() {
+        match self
+            .validate_fields(background_processing_sender.clone())
+            .unwrap()
+        {
             None => {
                 self.current_screen = Screen::SearchFields;
             }
             Some(parsed_fields) => {
+                let handle = Self::update_search_results(
+                    parsed_fields,
+                    background_processing_sender.clone(),
+                );
                 self.current_screen = Screen::SearchProgressing(SearchInProgressState::new(
-                    processing_sender.clone(),
-                    processing_receiver,
+                    handle,
+                    background_processing_sender,
+                    background_processing_receiver,
                 ));
-
-                let handle = self.update_search_results(parsed_fields);
-
-                match &mut self.current_screen {
-                    Screen::SearchProgressing(ref mut search_in_progress_state) => {
-                        search_in_progress_state.handle = Some(handle);
-                    }
-                    _ => {
-                        // Either search has finished or user has gone back, can ignore
-                    }
-                }
             }
         };
 
@@ -612,17 +612,16 @@ impl App {
             self.search_fields.replace().text(),
             path_pattern,
             self.directory.clone(),
+            self.include_hidden,
             background_processing_sender.clone(),
         )))
     }
 
-    pub fn update_search_results(&mut self, parsed_fields: ParsedFields) -> JoinHandle<()> {
-        let walker = WalkBuilder::new(&self.directory)
-            .hidden(!self.include_hidden)
-            .filter_entry(|entry| entry.file_name() != ".git")
-            .build_parallel();
-
-        let background_processing_sender = self.background_processing_sender().unwrap().clone();
+    pub fn update_search_results(
+        parsed_fields: ParsedFields,
+        background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    ) -> JoinHandle<()> {
+        let walker = parsed_fields.build_walker();
 
         tokio::spawn(async move {
             walker.run(|| {
@@ -651,6 +650,17 @@ impl App {
             // Ignore error: we may have gone back to the previous screen
             let _ = background_processing_sender.send(BackgroundProcessingEvent::SearchCompleted);
         })
+    }
+
+    fn ignore_file(path: &Path) -> bool {
+        if let Some(ext) = path.extension() {
+            if let Some(ext_str) = ext.to_str() {
+                if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     pub fn perform_replacement(results: &mut [SearchResult]) -> ReplaceState {
@@ -740,17 +750,6 @@ impl App {
 
     pub fn relative_path(&self, path: &Path) -> String {
         relative_path_from(&self.directory, path)
-    }
-
-    fn ignore_file(path: &Path) -> bool {
-        if let Some(ext) = path.extension() {
-            if let Some(ext_str) = ext.to_str() {
-                if BINARY_EXTENSIONS.contains(&ext_str.to_lowercase().as_str()) {
-                    return true;
-                }
-            }
-        }
-        false
     }
 }
 
