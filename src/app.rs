@@ -808,8 +808,8 @@ mod tests {
         app
     }
 
-    #[test]
-    fn test_calculate_statistics_all_success() {
+    #[tokio::test]
+    async fn test_calculate_statistics_all_success() {
         let app = build_test_app(vec![success_result(), success_result(), success_result()]);
         let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
             app.calculate_statistics(&search_state.results)
@@ -828,8 +828,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn test_calculate_statistics_with_ignores_and_errors() {
+    #[tokio::test]
+    async fn test_calculate_statistics_with_ignores_and_errors() {
         let error_result = error_result();
         let app = build_test_app(vec![
             success_result(),

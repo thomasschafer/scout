@@ -1,5 +1,8 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use scooter::{CheckboxField, Field, FieldName, SearchField, SearchFields, SearchType, TextField};
+use scooter::{
+    parsed_fields::SearchType, CheckboxField, Field, FieldName, SearchField, SearchFields,
+    TextField,
+};
 use std::sync::{Arc, RwLock};
 
 #[test]
