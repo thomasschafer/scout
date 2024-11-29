@@ -390,18 +390,12 @@ impl App {
             },
             AppEvent::PerformSearch => self.perform_search_if_valid(),
             AppEvent::PerformReplacement(mut search_state) => {
-                let replace_state = Self::perform_replacement(&mut search_state.results);
-                self.current_screen = Screen::Results(replace_state);
-                EventHandlingResult {
-                    exit: false,
-                    rerender: true,
-                }
+                self.perform_replacement(&mut search_state)
             }
         }
     }
 
-    // TODO: add tests for this
-    fn perform_search_if_valid(&mut self) -> EventHandlingResult {
+    pub fn perform_search_if_valid(&mut self) -> EventHandlingResult {
         let (background_processing_sender, background_processing_receiver) =
             mpsc::unbounded_channel();
 
@@ -425,6 +419,30 @@ impl App {
             }
         };
 
+        EventHandlingResult {
+            exit: false,
+            rerender: true,
+        }
+    }
+
+    pub fn perform_replacement(&mut self, search_state: &mut SearchState) -> EventHandlingResult {
+        for (path, results) in &search_state
+            .results
+            .iter_mut()
+            .filter(|res| res.included)
+            .chunk_by(|res| res.path.clone())
+        {
+            let mut results = results.collect::<Vec<_>>();
+            if let Err(file_err) = Self::replace_in_file(path, &mut results) {
+                results.iter_mut().for_each(|res| {
+                    res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
+                });
+            }
+        }
+
+        let replace_state = self.calculate_statistics(&search_state.results);
+
+        self.current_screen = Screen::Results(replace_state);
         EventHandlingResult {
             exit: false,
             rerender: true,
@@ -663,24 +681,7 @@ impl App {
         false
     }
 
-    pub fn perform_replacement(results: &mut [SearchResult]) -> ReplaceState {
-        for (path, results) in &results
-            .iter_mut()
-            .filter(|res| res.included)
-            .chunk_by(|res| res.path.clone())
-        {
-            let mut results = results.collect::<Vec<_>>();
-            if let Err(file_err) = Self::replace_in_file(path, &mut results) {
-                results.iter_mut().for_each(|res| {
-                    res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
-                });
-            }
-        }
-
-        Self::calculate_statistics(results)
-    }
-
-    fn calculate_statistics(results: &[SearchResult]) -> ReplaceState {
+    fn calculate_statistics(&self, results: &[SearchResult]) -> ReplaceState {
         let mut num_successes = 0;
         let mut num_ignored = 0;
         let mut errors = vec![];
@@ -811,7 +812,7 @@ mod tests {
     fn test_calculate_statistics_all_success() {
         let app = build_test_app(vec![success_result(), success_result(), success_result()]);
         let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
-            App::calculate_statistics(&search_state.results)
+            app.calculate_statistics(&search_state.results)
         } else {
             panic!("Expected SearchComplete");
         };
@@ -838,7 +839,7 @@ mod tests {
             ignored_result(),
         ]);
         let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
-            App::calculate_statistics(&search_state.results)
+            app.calculate_statistics(&search_state.results)
         } else {
             panic!("Expected SearchComplete");
         };
