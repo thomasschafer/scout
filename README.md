@@ -49,6 +49,14 @@ Ensure you have cargo installed (see [here](https://doc.rust-lang.org/cargo/gett
 cargo install scooter
 ```
 
+### Homebrew
+
+On macOS and Linux, you can install Scooter using [Homebrew](https://formulae.brew.sh/formula/scooter):
+
+```sh
+brew install scooter
+```
+
 ### NixOS
 
 Scooter is available as `scooter` in [nixpkgs](https://search.nixos.org/packages?channel=unstable&show=scooter), currently on the unstable channel.
