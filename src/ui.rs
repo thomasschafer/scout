@@ -365,7 +365,6 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
     };
     render_fn(frame, app, chunks[1]);
 
-    let global_keys = ["<C-r> reset", "<esc> quit"];
     let current_keys = match app.current_screen {
         CurrentScreen::Searching => {
             vec!["<enter> search", "<tab> focus next", "<S-tab> focus prev"]
@@ -389,7 +388,16 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
             }
         }
     };
-    let all_keys = current_keys.iter().chain(global_keys.iter()).join(" / ");
+
+    let additional_keys = if matches!(app.current_screen, CurrentScreen::PerformingReplacement) {
+        vec![]
+    } else {
+        vec!["<C-r> reset", "<esc> quit"]
+    };
+    let all_keys = current_keys
+        .iter()
+        .chain(additional_keys.iter())
+        .join(" / ");
     let keys_hint = Span::styled(all_keys, Color::default());
 
     let footer = Paragraph::new(Line::from(keys_hint))
