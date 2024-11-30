@@ -1,9 +1,10 @@
-use log::info;
+use log::{info, LevelFilter};
 use std::path::{Path, PathBuf};
 
 use etcetera::base_strategy::{choose_base_strategy, BaseStrategy};
 
 const APP_NAME: &str = "scooter";
+pub const DEFAULT_LOG_LEVEL: &str = "error";
 
 pub fn cache_dir() -> PathBuf {
     let strategy = choose_base_strategy().expect("Error when finding cache directory");
@@ -24,11 +25,11 @@ fn make_parent_dir(path: &Path) {
     }
 }
 
-pub fn setup_logging() -> anyhow::Result<()> {
+pub fn setup_logging(level: LevelFilter) -> anyhow::Result<()> {
     let log_path = default_log_file();
     make_parent_dir(&log_path);
 
-    let _ = simple_log::file(log_path.to_str().unwrap(), "warn", 100, 10);
+    let _ = simple_log::file(log_path.to_str().unwrap(), level.as_str(), 100, 10);
 
     info!("Logging initialized at {:?}", log_path);
     Ok(())
