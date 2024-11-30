@@ -1,5 +1,3 @@
-#![feature(mapped_lock_guards)]
-
 use clap::Parser;
 use event::EventHandlingResult;
 use log::LevelFilter;

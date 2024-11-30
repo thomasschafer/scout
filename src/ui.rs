@@ -44,7 +44,7 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         .zip(areas)
         .enumerate()
         .for_each(|(idx, (SearchField { name, field }, field_area))| {
-            field.read().unwrap().render(
+            field.read().render(
                 frame,
                 field_area,
                 name.title().to_owned(),
@@ -53,13 +53,7 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         });
 
     let highlighted_area = areas[app.search_fields.highlighted];
-    if let Some(cursor_idx) = app
-        .search_fields
-        .highlighted_field()
-        .read()
-        .unwrap()
-        .cursor_idx()
-    {
+    if let Some(cursor_idx) = app.search_fields.highlighted_field().read().cursor_idx() {
         frame.set_cursor(
             highlighted_area.x + cursor_idx as u16 + 1,
             highlighted_area.y + 1,
@@ -233,9 +227,7 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     frame.render_widget(List::new(search_results), list_area);
 }
 
-fn render_results_view(
-    replace_state: &ReplaceState,
-) -> impl Fn(&mut Frame<'_>, &App, Rect) + use<'_> {
+fn render_results_view(replace_state: &ReplaceState) -> impl Fn(&mut Frame<'_>, &App, Rect) + '_ {
     move |frame: &mut Frame<'_>, _app: &App, rect: Rect| {
         let [area] = Layout::horizontal([Constraint::Percentage(80)])
             .flex(Flex::Center)

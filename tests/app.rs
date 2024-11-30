@@ -154,7 +154,7 @@ fn collect_files(dir: &Path, base: &Path, files: &mut Vec<String>) {
                 .to_str()
                 .unwrap()
                 .to_string()
-                .replace("\\", "/");
+                .replace('\\', "/");
             files.push(rel_path);
         } else if path.is_dir() {
             collect_files(&path, base, files);
