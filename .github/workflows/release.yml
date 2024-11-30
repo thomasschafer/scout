@@ -148,15 +148,14 @@ jobs:
         esac
 
     - name: Upload to release
-      uses: softprops/action-gh-release@v1
-      with:
-        tag_name: v${{ needs.prepare-release.outputs.version }}
-        files: |
-          target/${{ matrix.target }}/release/${{ env.ASSET }}
-          target/${{ matrix.target }}/release/${{ env.ASSET }}.sha256
-          target/${{ matrix.target }}/release/${{ env.ASSET }}.sha512
+      shell: bash
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GH_REPO: ${{ github.repository }}
+      run: |
+        for file in target/${{ matrix.target }}/release/${{ env.ASSET }}*; do
+          gh release upload "v${{ needs.prepare-release.outputs.version }}" "$file" --clobber
+        done
 
   publish:
     needs: [prepare-release, build-and-upload]
