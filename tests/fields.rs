@@ -1,7 +1,9 @@
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use scooter::{CheckboxField, Field, FieldName, SearchField, SearchFields, SearchType, TextField};
-use std::cell::RefCell;
-use std::rc::Rc;
+use scooter::{
+    parsed_fields::SearchType, CheckboxField, Field, FieldName, SearchField, SearchFields,
+    TextField,
+};
+use std::sync::{Arc, RwLock};
 
 #[test]
 fn test_text_field_operations() {
@@ -76,19 +78,19 @@ fn test_search_fields() {
         fields: [
             SearchField {
                 name: FieldName::Search,
-                field: Rc::new(RefCell::new(Field::text(""))),
+                field: Arc::new(RwLock::new(Field::text(""))),
             },
             SearchField {
                 name: FieldName::Replace,
-                field: Rc::new(RefCell::new(Field::text(""))),
+                field: Arc::new(RwLock::new(Field::text(""))),
             },
             SearchField {
                 name: FieldName::FixedStrings,
-                field: Rc::new(RefCell::new(Field::checkbox(false))),
+                field: Arc::new(RwLock::new(Field::checkbox(false))),
             },
             SearchField {
                 name: FieldName::PathPattern,
-                field: Rc::new(RefCell::new(Field::text(""))),
+                field: Arc::new(RwLock::new(Field::text(""))),
             },
         ],
         highlighted: 0,
@@ -112,7 +114,8 @@ fn test_search_fields() {
     for c in "test search".chars() {
         search_fields
             .highlighted_field()
-            .borrow_mut()
+            .write()
+            .unwrap()
             .handle_keys(KeyCode::Char(c), KeyModifiers::NONE);
     }
     assert_eq!(search_fields.search().text, "test search");
@@ -122,7 +125,8 @@ fn test_search_fields() {
     for c in "test replace".chars() {
         search_fields
             .highlighted_field()
-            .borrow_mut()
+            .write()
+            .unwrap()
             .handle_keys(KeyCode::Char(c), KeyModifiers::NONE);
     }
     assert_eq!(search_fields.replace().text, "test replace");
@@ -131,7 +135,8 @@ fn test_search_fields() {
     assert_eq!(search_fields.highlighted, 2);
     search_fields
         .highlighted_field()
-        .borrow_mut()
+        .write()
+        .unwrap()
         .handle_keys(KeyCode::Char(' '), KeyModifiers::NONE);
     assert!(search_fields.fixed_strings().checked);
 
@@ -143,7 +148,8 @@ fn test_search_fields() {
 
     search_fields
         .highlighted_field()
-        .borrow_mut()
+        .write()
+        .unwrap()
         .handle_keys(KeyCode::Char(' '), KeyModifiers::NONE);
     let search_type = search_fields.search_type().unwrap();
     match search_type {

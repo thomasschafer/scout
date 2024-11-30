@@ -1,4 +1,7 @@
+#![feature(mapped_lock_guards)]
+
 use clap::Parser;
+use event::EventHandlingResult;
 use log::LevelFilter;
 use logging::{setup_logging, DEFAULT_LOG_LEVEL};
 use ratatui::{backend::CrosstermBackend, Terminal};
@@ -15,6 +18,7 @@ mod app;
 mod event;
 mod fields;
 mod logging;
+mod parsed_fields;
 mod tui;
 mod ui;
 mod utils;
@@ -58,23 +62,35 @@ async fn main() -> anyhow::Result<()> {
         Some(d) => Some(validate_directory(&d)?),
     };
 
-    let events = EventHandler::new();
-    let app_event_sender = events.app_event_sender.clone();
+    let app_events_handler = EventHandler::new();
+    let app_event_sender = app_events_handler.app_event_sender.clone();
     let mut app = App::new(directory, args.hidden, app_event_sender);
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
-    let mut tui = Tui::new(terminal, events);
+    let mut tui = Tui::new(terminal, app_events_handler);
     tui.init()?;
+    tui.draw(&mut app)?;
 
     while app.running {
-        tui.draw(&mut app)?;
-        let exit = match tui.events.next().await? {
-            Event::Key(key_event) => app.handle_key_events(&key_event)?,
-            Event::Mouse(_) => false,
-            Event::Resize(_, _) => false,
-            Event::App(app_event) => app.handle_event(app_event),
+        let EventHandlingResult { exit, rerender } = tokio::select! {
+            Some(event) = tui.events.receiver.recv() => {
+                match event {
+                    Event::Key(key_event) => app.handle_key_events(&key_event)?,
+                    Event::App(app_event) => app.handle_app_event(app_event).await,
+                    Event::Mouse(_) | Event::Resize(_, _) => EventHandlingResult {
+                        exit: false,
+                        rerender: true,
+                    },
+                }
+            }
+            Some(event) = app.background_processing_recv() => {
+                app.handle_background_processing_event(event)}
         };
+
+        if rerender {
+            tui.draw(&mut app)?;
+        }
         if exit {
             break;
         }

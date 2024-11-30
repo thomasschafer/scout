@@ -9,6 +9,12 @@ pub fn replace_start(s: String, from: &str, to: &str) -> String {
     }
 }
 
+pub fn relative_path_from(root_dir: &Path, path: &Path) -> String {
+    let root_dir = root_dir.to_str().unwrap();
+    let path = path.to_str().unwrap().to_owned();
+    replace_start(path, root_dir, ".")
+}
+
 pub fn group_by<I, T, F>(iter: I, predicate: F) -> Vec<Vec<T>>
 where
     I: IntoIterator<Item = T>,
@@ -42,6 +48,13 @@ pub fn validate_directory(dir_str: &str) -> Result<PathBuf> {
             "Directory '{}' does not exist. Please provide a valid directory path.",
             dir_str
         ))
+    }
+}
+
+pub fn first_chars(s: &str, n: usize) -> &str {
+    match s.char_indices().nth(n) {
+        Some((idx, _)) => &s[..idx],
+        None => s,
     }
 }
 
@@ -191,5 +204,15 @@ mod tests {
 
         assert!(result.is_ok());
         assert_eq!(result.unwrap(), special_dir);
+    }
+
+    #[test]
+    fn test_first_chars() {
+        let text = "Hello, 世界!";
+        assert_eq!(first_chars(text, 0), "");
+        assert_eq!(first_chars(text, 3), "Hel");
+        assert_eq!(first_chars(text, 6), "Hello,");
+        assert_eq!(first_chars(text, 8), "Hello, 世");
+        assert_eq!(first_chars(text, 100), "Hello, 世界!");
     }
 }

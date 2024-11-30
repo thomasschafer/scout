@@ -1,10 +1,40 @@
-use crate::app::AppEvent;
-use anyhow::anyhow;
 use crossterm::event::{self, Event as CrosstermEvent, KeyEvent, MouseEvent};
 use futures::StreamExt;
+use std::path::PathBuf;
 use tokio::sync::mpsc;
 
-#[derive(Clone, Debug)]
+use crate::app::SearchState;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ReplaceResult {
+    Success,
+    Error(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SearchResult {
+    pub path: PathBuf,
+    pub line_number: usize,
+    pub line: String,
+    pub replacement: String,
+    pub included: bool,
+    pub replace_result: Option<ReplaceResult>,
+}
+
+#[derive(Debug)]
+pub enum AppEvent {
+    Rerender,
+    PerformSearch,
+    PerformReplacement(SearchState),
+}
+
+#[derive(Debug)]
+pub enum BackgroundProcessingEvent {
+    AddSearchResult(SearchResult),
+    SearchCompleted,
+}
+
+#[derive(Debug)]
 pub enum Event {
     Key(KeyEvent),
     App(AppEvent),
@@ -16,8 +46,13 @@ pub enum Event {
 
 #[derive(Debug)]
 pub struct EventHandler {
-    receiver: mpsc::UnboundedReceiver<Event>,
+    pub receiver: mpsc::UnboundedReceiver<Event>,
     pub app_event_sender: mpsc::UnboundedSender<AppEvent>,
+}
+
+pub struct EventHandlingResult {
+    pub exit: bool,
+    pub rerender: bool,
 }
 
 impl EventHandler {
@@ -55,13 +90,6 @@ impl EventHandler {
             receiver,
             app_event_sender,
         }
-    }
-
-    pub async fn next(&mut self) -> anyhow::Result<Event> {
-        self.receiver
-            .recv()
-            .await
-            .ok_or(anyhow!("Event stream ended unexpectedly"))
     }
 }
 

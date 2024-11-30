@@ -12,9 +12,10 @@ use std::{cmp::min, iter};
 
 use crate::{
     app::{
-        App, CurrentScreen, FieldName, ReplaceResult, SearchField, SearchResult, NUM_SEARCH_FIELDS,
+        App, FieldName, ReplaceState, Screen, SearchField, SearchInProgressState, NUM_SEARCH_FIELDS,
     },
-    utils::group_by,
+    event::{ReplaceResult, SearchResult},
+    utils::{first_chars, group_by},
 };
 
 impl FieldName {
@@ -43,7 +44,7 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         .zip(areas)
         .enumerate()
         .for_each(|(idx, (SearchField { name, field }, field_area))| {
-            field.borrow().render(
+            field.read().unwrap().render(
                 frame,
                 field_area,
                 name.title().to_owned(),
@@ -52,7 +53,13 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         });
 
     let highlighted_area = areas[app.search_fields.highlighted];
-    if let Some(cursor_idx) = app.search_fields.highlighted_field().borrow().cursor_idx() {
+    if let Some(cursor_idx) = app
+        .search_fields
+        .highlighted_field()
+        .read()
+        .unwrap()
+        .cursor_idx()
+    {
         frame.set_cursor(
             highlighted_area.x + cursor_idx as u16 + 1,
             highlighted_area.y + 1,
@@ -137,38 +144,50 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             .flex(Flex::Start)
             .areas(area);
 
-    let complete_state = app.results.search_complete();
+    let (is_complete, search_results) = match &app.current_screen {
+        Screen::SearchProgressing(SearchInProgressState { search_state, .. }) => {
+            (false, search_state)
+        }
+        Screen::SearchComplete(search_state) => (true, search_state),
+        // prevent race condition when state is being reset
+        _ => return,
+    };
 
     let list_area_height = list_area.height as usize;
     let item_height = 4; // TODO: find a better way of doing this
     let midpoint = list_area_height / (2 * item_height);
-    let num_results = complete_state.results.len();
+    let num_results = search_results.results.len();
 
     frame.render_widget(
-        Span::raw(format!("Results: {}", num_results)),
+        Span::raw(format!(
+            "Results: {} {}",
+            num_results,
+            if is_complete {
+                "[Search complete]"
+            } else {
+                "[Still searching...]"
+            }
+        )),
         num_results_area,
     );
 
-    let results_iter = complete_state
+    let results_iter = search_results
         .results
         .iter()
         .enumerate()
         .skip(min(
-            complete_state.selected.saturating_sub(midpoint),
+            search_results.selected.saturating_sub(midpoint),
             num_results.saturating_sub(list_area_height / item_height),
         ))
         .take(list_area_height / item_height + 1); // We shouldn't need the +1, but let's keep it in to ensure we have buffer when rendering
 
     let search_results = results_iter.flat_map(|(idx, result)| {
-        let (old_line, new_line) = line_diff(result.line.as_str(), result.replacement.as_str());
+        let width = list_area.width;
+        let before = first_chars(&result.line, width as usize);
+        let after = first_chars(&result.replacement, width as usize);
+        let (old_line, new_line) = line_diff(before, after);
 
-        let file_path = format!(
-            "[{}] {}:{}",
-            if result.included { 'x' } else { ' ' },
-            app.relative_path(result.path.clone()),
-            result.line_number
-        );
-        let file_path_style = if complete_state.selected == idx {
+        let file_path_style = if search_results.selected == idx {
             Style::new().bg(if result.included {
                 Color::Blue
             } else {
@@ -177,9 +196,34 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
         } else {
             Style::new()
         };
+        let right_content = format!(" ({})", idx);
+        let right_content_len = right_content.len() as u16;
+        let left_content = format!(
+            "[{}] {}:{}",
+            if result.included { 'x' } else { ' ' },
+            app.relative_path(&result.path),
+            result.line_number,
+        );
+        let left_content_trimmed = left_content
+            .chars()
+            .take(list_area.width.saturating_sub(right_content_len) as usize)
+            .collect::<String>();
+        let left_content_trimmed_len = left_content_trimmed.len() as u16;
+        let spacers = " ".repeat(
+            list_area
+                .width
+                .saturating_sub(left_content_trimmed_len + right_content_len) as usize,
+        );
+
+        let file_path = Line::from(vec![
+            Span::raw(left_content_trimmed),
+            Span::raw(spacers),
+            Span::raw(right_content),
+        ])
+        .style(file_path_style);
 
         [
-            ListItem::new(Text::styled(file_path, file_path_style)),
+            ListItem::new(file_path),
             ListItem::new(diff_to_line(old_line)),
             ListItem::new(diff_to_line(new_line)),
             ListItem::new(""),
@@ -189,22 +233,26 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
     frame.render_widget(List::new(search_results), list_area);
 }
 
-fn render_results_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
-    let [area] = Layout::horizontal([Constraint::Percentage(80)])
-        .flex(Flex::Center)
-        .areas(rect);
+fn render_results_view(
+    replace_state: &ReplaceState,
+) -> impl Fn(&mut Frame<'_>, &App, Rect) + use<'_> {
+    move |frame: &mut Frame<'_>, _app: &App, rect: Rect| {
+        let [area] = Layout::horizontal([Constraint::Percentage(80)])
+            .flex(Flex::Center)
+            .areas(rect);
 
-    if app.results.replace_complete().errors.is_empty() {
-        render_results_success(area, app, frame);
-    } else {
-        render_results_errors(area, app, frame);
+        if replace_state.errors.is_empty() {
+            render_results_success(area, replace_state, frame);
+        } else {
+            render_results_errors(area, replace_state, frame);
+        }
     }
 }
 
 const ERROR_ITEM_HEIGHT: u16 = 3;
 const NUM_TALLIES: usize = 3;
 
-fn render_results_success(area: Rect, app: &App, frame: &mut Frame<'_>) {
+fn render_results_success(area: Rect, replace_state: &ReplaceState, frame: &mut Frame<'_>) {
     let [_, success_title_area, results_area, _] = Layout::vertical([
         Constraint::Fill(1),
         Constraint::Length(3),
@@ -214,7 +262,7 @@ fn render_results_success(area: Rect, app: &App, frame: &mut Frame<'_>) {
     .flex(Flex::Start)
     .areas(area);
 
-    render_results_tallies(results_area, frame, app);
+    render_results_tallies(results_area, frame, replace_state);
 
     let text = "Success!";
     let area = center(
@@ -225,7 +273,7 @@ fn render_results_success(area: Rect, app: &App, frame: &mut Frame<'_>) {
     frame.render_widget(Text::raw(text), area);
 }
 
-fn render_results_errors(area: Rect, app: &App, frame: &mut Frame<'_>) {
+fn render_results_errors(area: Rect, replace_state: &ReplaceState, frame: &mut Frame<'_>) {
     let [results_area, list_title_area, list_area] = Layout::vertical([
         Constraint::Length(ERROR_ITEM_HEIGHT * NUM_TALLIES as u16), // TODO: find a better way of doing this
         Constraint::Length(1),
@@ -234,9 +282,7 @@ fn render_results_errors(area: Rect, app: &App, frame: &mut Frame<'_>) {
     .flex(Flex::Start)
     .areas(area);
 
-    let errors = app
-        .results
-        .replace_complete()
+    let errors = replace_state
         .errors
         .iter()
         .map(|res| {
@@ -251,18 +297,16 @@ fn render_results_errors(area: Rect, app: &App, frame: &mut Frame<'_>) {
                 },
             )
         })
-        .skip(app.results.replace_complete().replacement_errors_pos)
+        .skip(replace_state.replacement_errors_pos)
         .take(list_area.height as usize / 3 + 1); // TODO: don't hardcode height
 
-    render_results_tallies(results_area, frame, app);
+    render_results_tallies(results_area, frame, replace_state);
 
     frame.render_widget(Text::raw("Errors:"), list_title_area);
     frame.render_widget(List::new(errors.flatten()), list_area);
 }
 
-fn render_results_tallies(results_area: Rect, frame: &mut Frame<'_>, app: &App) {
-    let replace_results = app.results.replace_complete();
-
+fn render_results_tallies(results_area: Rect, frame: &mut Frame<'_>, replace_state: &ReplaceState) {
     let [success_area, ignored_area, errors_area] = Layout::vertical([
         Constraint::Length(3),
         Constraint::Length(3),
@@ -273,11 +317,11 @@ fn render_results_tallies(results_area: Rect, frame: &mut Frame<'_>, app: &App) 
     let widgets: [_; NUM_TALLIES] = [
         (
             "Successful replacements:",
-            replace_results.num_successes,
+            replace_state.num_successes,
             success_area,
         ),
-        ("Ignored:", replace_results.num_ignored, ignored_area),
-        ("Errors:", replace_results.errors.len(), errors_area),
+        ("Ignored:", replace_state.num_ignored, ignored_area),
+        ("Errors:", replace_state.errors.len(), errors_area),
     ];
     let widgets = widgets.into_iter().map(|(title, num, area)| {
         (
@@ -334,7 +378,7 @@ fn error_result(result: &SearchResult, error: &str) -> [ratatui::widgets::ListIt
     .map(|(s, style)| ListItem::new(Text::styled(s, style)))
 }
 
-type RenderFn = Box<dyn Fn(&mut Frame<'_>, &App, Rect)>;
+type RenderFn<'a> = Box<dyn Fn(&mut Frame<'_>, &'a App, Rect) + 'a>;
 
 pub fn render(app: &App, frame: &mut Frame<'_>) {
     let chunks = Layout::default()
@@ -352,36 +396,40 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         .alignment(Alignment::Center);
     frame.render_widget(title, chunks[0]);
 
-    let render_fn: RenderFn = match app.current_screen {
-        CurrentScreen::Searching => Box::new(render_search_view),
-        CurrentScreen::PerformingSearch => {
-            Box::new(render_loading_view("Performing search...".to_owned()))
+    let render_fn: RenderFn<'_> = match &app.current_screen {
+        Screen::SearchFields => Box::new(render_search_view),
+        Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
+            Box::new(render_confirmation_view)
         }
-        CurrentScreen::Confirmation => Box::new(render_confirmation_view),
-        CurrentScreen::PerformingReplacement => {
+        Screen::PerformingReplacement => {
             Box::new(render_loading_view("Performing replacement...".to_owned()))
         }
-        CurrentScreen::Results => Box::new(render_results_view),
+        Screen::Results(ref replace_state) => Box::new(render_results_view(replace_state)),
     };
     render_fn(frame, app, chunks[1]);
 
     let current_keys = match app.current_screen {
-        CurrentScreen::Searching => {
+        Screen::SearchFields => {
             vec!["<enter> search", "<tab> focus next", "<S-tab> focus prev"]
         }
-
-        CurrentScreen::Confirmation => {
-            vec![
-                "<enter> replace",
+        Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
+            let mut keys = if let Screen::SearchComplete(_) = app.current_screen {
+                // TODO: actually prevent confirmation when search is in progress
+                vec!["<enter> replace"]
+            } else {
+                vec![]
+            };
+            keys.append(&mut vec![
                 "<space> toggle",
                 "<j> down",
                 "<k> up",
                 "<C-o> back",
-            ]
+            ]);
+            keys
         }
-        CurrentScreen::PerformingSearch | CurrentScreen::PerformingReplacement => vec![],
-        CurrentScreen::Results => {
-            if !app.results.replace_complete().errors.is_empty() {
+        Screen::PerformingReplacement => vec![],
+        Screen::Results(ref replace_state) => {
+            if !replace_state.errors.is_empty() {
                 vec!["<j> down", "<k> up"]
             } else {
                 vec![]
@@ -389,7 +437,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         }
     };
 
-    let additional_keys = if matches!(app.current_screen, CurrentScreen::PerformingReplacement) {
+    let additional_keys = if matches!(app.current_screen, Screen::PerformingReplacement) {
         vec![]
     } else {
         vec!["<C-r> reset", "<esc> quit"]
