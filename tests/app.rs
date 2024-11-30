@@ -3,7 +3,7 @@ use scooter::{
     App, EventHandler, ReplaceResult, ReplaceState, Screen, SearchFields, SearchResult, SearchState,
 };
 use std::cmp::max;
-use std::fs::{create_dir_all, File};
+use std::fs::{self, create_dir_all, File};
 use std::io::Write;
 use std::mem;
 use std::path::{Path, PathBuf};
@@ -130,13 +130,36 @@ macro_rules! create_test_files {
                 let path = [temp_dir.path().to_str().unwrap(), $name].join("/");
                 let path = Path::new(&path);
                 create_dir_all(path.parent().unwrap()).unwrap();
-                let mut file = File::create(path).unwrap();
-                file.write_all(contents.as_bytes()).unwrap();
-                file.sync_all().unwrap();
+                {
+                    let mut file = File::create(path).unwrap();
+                    file.write_all(contents.as_bytes()).unwrap();
+                    file.sync_all().unwrap();
+                }
             )+
+
+            #[cfg(windows)]
+            sleep(Duration::from_millis(100));
+
             temp_dir
         }
     };
+}
+fn collect_files(dir: &Path, base: &Path, files: &mut Vec<String>) {
+    for entry in fs::read_dir(dir).unwrap() {
+        let path = entry.unwrap().path();
+        if path.is_file() {
+            let rel_path = path
+                .strip_prefix(base)
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .to_string()
+                .replace("\\", "/");
+            files.push(rel_path);
+        } else if path.is_dir() {
+            collect_files(&path, base, files);
+        }
+    }
 }
 
 macro_rules! assert_test_files {
@@ -165,18 +188,6 @@ macro_rules! assert_test_files {
 
             let mut expected_files: Vec<String> = vec![$($name.to_string()),+];
             expected_files.sort();
-
-            fn collect_files(dir: &Path, base: &Path, files: &mut Vec<String>) {
-                for entry in fs::read_dir(dir).unwrap() {
-                    let path = entry.unwrap().path();
-                    if path.is_file() {
-                        let rel_path = path.strip_prefix(base).unwrap().to_str().unwrap().to_string();
-                        files.push(rel_path);
-                    } else if path.is_dir() {
-                        collect_files(&path, base, files);
-                    }
-                }
-            }
 
             let mut actual_files = Vec::new();
             collect_files(
@@ -209,8 +220,14 @@ where
 }
 
 async fn process_bp_events(app: &mut App) {
+    let timeout = Duration::from_secs(5);
+    let start = Instant::now();
+
     while let Some(event) = app.background_processing_recv().await {
         app.handle_background_processing_event(event);
+        if start.elapsed() > timeout {
+            panic!("Couldn't process background events in a reasonable time");
+        }
     }
 }
 
@@ -218,7 +235,7 @@ macro_rules! wait_for_screen {
     ($app:expr, $variant:path) => {
         wait_until(
             || matches!($app.current_screen, $variant(_)),
-            Duration::from_millis(500),
+            Duration::from_secs(1),
         )
     };
 }

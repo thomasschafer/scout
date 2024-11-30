@@ -2,9 +2,10 @@
 
 use clap::Parser;
 use event::EventHandlingResult;
-use logging::setup_logging;
+use log::LevelFilter;
+use logging::{setup_logging, DEFAULT_LOG_LEVEL};
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
+use std::{io, str::FromStr};
 use tui::Tui;
 use utils::validate_directory;
 
