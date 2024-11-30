@@ -557,7 +557,6 @@ impl App {
             });
         }
 
-        // TODO: why doesn't this work while search (or replacement?) are being completed? Also ignore other keys, i.e. don't allow them to queue up
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
                 return Ok(EventHandlingResult {
@@ -642,7 +641,7 @@ impl App {
 
         tokio::spawn(async move {
             walker.run(|| {
-                let parsed_fields = parsed_fields.clone(); // TODO: do we need to clone it?
+                let parsed_fields = parsed_fields.clone();
 
                 Box::new(move |entry| {
                     let entry = match entry {

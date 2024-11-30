@@ -1,5 +1,4 @@
 use itertools::Itertools;
-use log::error;
 use ratatui::{
     layout::Constraint,
     layout::{Alignment, Direction, Flex, Layout, Rect},
@@ -137,7 +136,6 @@ pub fn line_diff<'a>(old_line: &'a str, new_line: &'a str) -> (Vec<Diff>, Vec<Di
 }
 
 fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
-    error!("Rendering confirmation view");
     let [area] = Layout::horizontal([Constraint::Percentage(80)])
         .flex(Flex::Center)
         .areas(rect);
@@ -165,7 +163,7 @@ fn render_confirmation_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             "Results: {} {}",
             num_results,
             if is_complete {
-                "[Search complete]" // TODO: don't allow users to continue if still searching
+                "[Search complete]"
             } else {
                 "[Still searching...]"
             }
@@ -439,7 +437,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         }
     };
 
-    let additional_keys = if matches!(app.current_screen, CurrentScreen::PerformingReplacement) {
+    let additional_keys = if matches!(app.current_screen, Screen::PerformingReplacement) {
         vec![]
     } else {
         vec!["<C-r> reset", "<esc> quit"]

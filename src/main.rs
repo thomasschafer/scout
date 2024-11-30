@@ -2,7 +2,6 @@
 
 use clap::Parser;
 use event::EventHandlingResult;
-use log::error;
 use logging::setup_logging;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use std::io;
@@ -75,7 +74,6 @@ async fn main() -> anyhow::Result<()> {
     while app.running {
         let EventHandlingResult { exit, rerender } = tokio::select! {
             Some(event) = tui.events.receiver.recv() => {
-                error!("App event: {:?}", event);
                 match event {
                     Event::Key(key_event) => app.handle_key_events(&key_event)?,
                     Event::App(app_event) => app.handle_app_event(app_event).await,
@@ -86,7 +84,6 @@ async fn main() -> anyhow::Result<()> {
                 }
             }
             Some(event) = app.background_processing_recv() => {
-                error!("BP event: {:?}", event);
                 app.handle_background_processing_event(event)}
         };
 

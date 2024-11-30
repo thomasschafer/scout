@@ -1,6 +1,6 @@
 use content_inspector::{inspect, ContentType};
 use ignore::{WalkBuilder, WalkParallel};
-use log::{error, warn};
+use log::warn;
 use regex::Regex;
 use std::{
     fs::File,
@@ -71,11 +71,9 @@ impl ParsedFields {
                                 line.clone(),
                                 line_number,
                             ) {
-                                // TODO: check the file before reading? Also add tests
                                 if let ContentType::BINARY = inspect(line.as_bytes()) {
                                     continue;
                                 }
-                                error!("Pushing result"); // TODO: remove this and other unneeded logs
                                 let send_result = self
                                     .background_processing_sender
                                     .send(BackgroundProcessingEvent::AddSearchResult(result));
