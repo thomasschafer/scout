@@ -1,7 +1,8 @@
 use clap::Parser;
-use logging::setup_logging;
+use log::LevelFilter;
+use logging::{setup_logging, DEFAULT_LOG_LEVEL};
 use ratatui::{backend::CrosstermBackend, Terminal};
-use std::io;
+use std::{io, str::FromStr};
 use tui::Tui;
 use utils::validate_directory;
 
@@ -29,11 +30,26 @@ struct Args {
     /// Include hidden files and directories, such as those whose name starts with a dot (.)
     #[arg(short = '.', long, default_value = "false")]
     hidden: bool,
+
+    /// Log level (trace, debug, info, warn, error)
+    #[arg(
+        long,
+        value_parser = parse_log_level,
+        default_value = DEFAULT_LOG_LEVEL
+    )]
+    log_level: LevelFilter,
 }
 
+fn parse_log_level(s: &str) -> Result<LevelFilter, String> {
+    LevelFilter::from_str(s).map_err(|_| format!("Invalid log level: {}", s))
+}
+
+// In main(), update the logging setup:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    setup_logging()?;
+    let args = Args::parse();
+
+    setup_logging(args.log_level)?;
 
     let args = Args::parse();
 

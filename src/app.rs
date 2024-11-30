@@ -489,7 +489,7 @@ impl App {
             .build();
         let paths: Vec<_> = walker
             .flatten()
-            .filter(|entry| entry.file_type().map_or(false, |ft| ft.is_file()))
+            .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
             .map(|entry| entry.path().to_path_buf())
             .filter(|path| {
                 if self.ignore_file(path) {
