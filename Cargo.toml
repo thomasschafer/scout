@@ -22,7 +22,6 @@ futures = "0.3.31"
 ignore = "0.4.22"
 itertools = "0.13.0"
 log = "0.4.22"
-rand = "0.8.5"
 ratatui = "0.27.0"
 regex = "1.10.6"
 serde = { version = "1.0.204", features = ["derive"] }
@@ -33,6 +32,7 @@ tokio = { version = "1.40.0", features = ["full"] }
 
 [dev-dependencies]
 tempfile = "3.12.0"
+rand = "0.8.5"
 
 [lib]
 name = "scooter"
