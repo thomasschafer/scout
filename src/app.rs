@@ -477,7 +477,6 @@ impl App {
                     mem::replace(&mut self.current_screen, Screen::SearchFields)
                 {
                     self.current_screen = Screen::SearchComplete(search_state);
-                    self.app_event_sender.send(AppEvent::Rerender).unwrap();
                 }
                 EventHandlingResult {
                     exit: false,
@@ -800,7 +799,8 @@ mod tests {
     }
 
     fn build_test_app(results: Vec<SearchResult>) -> App {
-        let mut app = App::new(None, false, EventHandler::new().app_event_sender);
+        let event_handler = EventHandler::new();
+        let mut app = App::new(None, false, event_handler.app_event_sender);
         app.current_screen = Screen::SearchComplete(SearchState {
             results,
             selected: 0,
