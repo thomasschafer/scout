@@ -1051,7 +1051,7 @@ dependencies = [
 
 [[package]]
 name = "scooter"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1063,6 +1063,7 @@ dependencies = [
  "ignore",
  "itertools",
  "log",
+ "parking_lot",
  "rand",
  "ratatui",
  "regex",

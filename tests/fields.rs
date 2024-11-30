@@ -1,9 +1,10 @@
+use parking_lot::RwLock;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
 use scooter::{
     parsed_fields::SearchType, CheckboxField, Field, FieldName, SearchField, SearchFields,
     TextField,
 };
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 
 #[test]
 fn test_text_field_operations() {
@@ -115,7 +116,6 @@ fn test_search_fields() {
         search_fields
             .highlighted_field()
             .write()
-            .unwrap()
             .handle_keys(KeyCode::Char(c), KeyModifiers::NONE);
     }
     assert_eq!(search_fields.search().text, "test search");
@@ -126,7 +126,6 @@ fn test_search_fields() {
         search_fields
             .highlighted_field()
             .write()
-            .unwrap()
             .handle_keys(KeyCode::Char(c), KeyModifiers::NONE);
     }
     assert_eq!(search_fields.replace().text, "test replace");
@@ -136,7 +135,6 @@ fn test_search_fields() {
     search_fields
         .highlighted_field()
         .write()
-        .unwrap()
         .handle_keys(KeyCode::Char(' '), KeyModifiers::NONE);
     assert!(search_fields.fixed_strings().checked);
 
@@ -149,7 +147,6 @@ fn test_search_fields() {
     search_fields
         .highlighted_field()
         .write()
-        .unwrap()
         .handle_keys(KeyCode::Char(' '), KeyModifiers::NONE);
     let search_type = search_fields.search_type().unwrap();
     match search_type {

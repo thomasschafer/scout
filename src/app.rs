@@ -1,6 +1,9 @@
 use ignore::WalkState;
 use itertools::Itertools;
 use log::info;
+use parking_lot::{
+    MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
+};
 use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
@@ -9,10 +12,7 @@ use std::{
     io::{BufRead, BufReader, BufWriter, Write},
     mem,
     path::{Path, PathBuf},
-    sync::{
-        Arc, MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard,
-        RwLockWriteGuard,
-    },
+    sync::Arc,
     time::{Duration, Instant},
 };
 use tokio::{
@@ -186,16 +186,13 @@ macro_rules! define_field_accessor {
                 .find(|SearchField { name, .. }| *name == $field_name)
                 .expect("Couldn't find field");
 
-            RwLockReadGuard::map(
-                field.field.read().expect("Failed to acquire read lock"),
-                |f| {
-                    if let Field::$field_variant(ref inner) = f {
-                        inner
-                    } else {
-                        panic!("Incorrect field type")
-                    }
-                },
-            )
+            RwLockReadGuard::map(field.field.read(), |f| {
+                if let Field::$field_variant(ref inner) = f {
+                    inner
+                } else {
+                    panic!("Incorrect field type")
+                }
+            })
         }
     };
 }
@@ -209,20 +206,16 @@ macro_rules! define_field_accessor_mut {
                 .find(|SearchField { name, .. }| *name == $field_name)
                 .expect("Couldn't find field");
 
-            RwLockWriteGuard::map(
-                field.field.write().expect("Failed to acquire write lock"),
-                |f| {
-                    if let Field::$field_variant(ref mut inner) = f {
-                        inner
-                    } else {
-                        panic!("Incorrect field type")
-                    }
-                },
-            )
+            RwLockWriteGuard::map(field.field.write(), |f| {
+                if let Field::$field_variant(ref mut inner) = f {
+                    inner
+                } else {
+                    panic!("Incorrect field type")
+                }
+            })
         }
     };
 }
-
 impl SearchFields {
     define_field_accessor!(search, FieldName::Search, Text, TextField);
     define_field_accessor!(replace, FieldName::Replace, Text, TextField);
@@ -282,14 +275,7 @@ impl SearchFields {
     pub fn clear_errors(&mut self) {
         self.fields
             .iter_mut()
-            .try_for_each(|field| {
-                field
-                    .field
-                    .write()
-                    .map(|mut f| f.clear_error())
-                    .map_err(|e| format!("Failed to clear error: {}", e))
-            })
-            .expect("Failed to clear field errors");
+            .for_each(|field| field.field.write().clear_error())
     }
 
     pub fn search_type(&self) -> anyhow::Result<SearchType> {
@@ -502,7 +488,6 @@ impl App {
                 self.search_fields
                     .highlighted_field()
                     .write()
-                    .unwrap()
                     .handle_keys(code, modifiers);
             }
         };
@@ -715,7 +700,7 @@ impl App {
 
     fn replace_in_file(
         file_path: PathBuf,
-        results: &mut Vec<&mut SearchResult>,
+        results: &mut [&mut SearchResult],
     ) -> anyhow::Result<()> {
         let mut line_map: HashMap<_, _> =
             HashMap::from_iter(results.iter_mut().map(|res| (res.line_number, res)));
