@@ -46,7 +46,6 @@ fn parse_log_level(s: &str) -> Result<LevelFilter, String> {
     LevelFilter::from_str(s).map_err(|_| format!("Invalid log level: {}", s))
 }
 
-// In main(), update the logging setup:
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();

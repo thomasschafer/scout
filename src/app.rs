@@ -260,8 +260,16 @@ impl SearchFields {
         }
     }
 
+    fn highlighted_field_impl(&self) -> &SearchField {
+        &self.fields[self.highlighted]
+    }
+
     pub fn highlighted_field(&self) -> &Arc<RwLock<Field>> {
-        &self.fields[self.highlighted].field
+        &self.highlighted_field_impl().field
+    }
+
+    pub fn highlighted_field_name(&self) -> &FieldName {
+        &self.highlighted_field_impl().name
     }
 
     pub fn focus_next(&mut self) {
@@ -498,6 +506,10 @@ impl App {
                 self.search_fields.focus_next();
             }
             (code, modifiers) => {
+                if let FieldName::FixedStrings = self.search_fields.highlighted_field_name() {
+                    // TODO: ideally this should only happen when the field is checked, but for now this will do
+                    self.search_fields.search_mut().clear_error();
+                };
                 self.search_fields
                     .highlighted_field()
                     .write()
