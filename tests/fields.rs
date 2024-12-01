@@ -95,6 +95,7 @@ fn test_search_fields() {
             },
         ],
         highlighted: 0,
+        show_error_popup: false,
     };
 
     // Test focus navigation

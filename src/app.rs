@@ -1,6 +1,5 @@
 use ignore::WalkState;
 use itertools::Itertools;
-use log::info;
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
@@ -22,7 +21,7 @@ use tokio::{
 
 use crate::{
     event::{AppEvent, BackgroundProcessingEvent, ReplaceResult, SearchResult},
-    fields::{CheckboxField, Field, TextField},
+    fields::{CheckboxField, Field, FieldError, TextField},
     parsed_fields::{ParsedFields, SearchType},
     utils::relative_path_from,
     EventHandlingResult,
@@ -175,6 +174,7 @@ pub const NUM_SEARCH_FIELDS: usize = 4;
 pub struct SearchFields {
     pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
+    pub show_error_popup: bool,
 }
 
 macro_rules! define_field_accessor {
@@ -256,6 +256,7 @@ impl SearchFields {
                 },
             ],
             highlighted: 0,
+            show_error_popup: false,
         }
     }
 
@@ -272,10 +273,17 @@ impl SearchFields {
             (self.highlighted + self.fields.len().saturating_sub(1)) % self.fields.len();
     }
 
-    pub fn clear_errors(&mut self) {
+    pub fn errors(&self) -> Vec<(&str, FieldError)> {
         self.fields
-            .iter_mut()
-            .for_each(|field| field.field.write().clear_error())
+            .iter()
+            .filter_map(|field| {
+                field
+                    .field
+                    .read()
+                    .error()
+                    .map(|err| (field.name.title(), err))
+            })
+            .collect::<Vec<_>>()
     }
 
     pub fn search_type(&self) -> anyhow::Result<SearchType> {
@@ -288,6 +296,11 @@ impl SearchFields {
         };
         Ok(result)
     }
+}
+
+enum ValidatedField<T> {
+    Parsed(T),
+    Error,
 }
 
 pub struct App {
@@ -473,7 +486,7 @@ impl App {
     }
 
     fn handle_key_searching(&mut self, key: &KeyEvent) -> bool {
-        self.search_fields.clear_errors();
+        self.search_fields.show_error_popup = false;
         match (key.code, key.modifiers) {
             (KeyCode::Enter, _) => {
                 self.app_event_sender.send(AppEvent::PerformSearch).unwrap();
@@ -544,10 +557,17 @@ impl App {
 
         match (key.code, key.modifiers) {
             (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
+                let exit = match &self.current_screen {
+                    Screen::SearchFields if self.search_fields.show_error_popup => {
+                        self.search_fields.show_error_popup = false;
+                        false
+                    }
+                    _ => true,
+                };
                 return Ok(EventHandlingResult {
-                    exit: true,
+                    exit,
                     rerender: true,
-                })
+                });
             }
             (KeyCode::Char('r'), KeyModifiers::CONTROL) => {
                 self.reset();
@@ -574,37 +594,43 @@ impl App {
     }
 
     fn validate_fields(
-        &self,
+        &mut self,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> anyhow::Result<Option<ParsedFields>> {
         let search_pattern = match self.search_fields.search_type() {
             Err(e) => {
                 if e.downcast_ref::<regex::Error>().is_some() {
-                    info!("Error when parsing search regex {}", e);
                     self.search_fields
                         .search_mut()
-                        .set_error("Couldn't parse regex".to_owned());
-                    return Ok(None);
+                        .set_error("Couldn't parse regex".to_owned(), e.to_string());
+                    ValidatedField::Error
                 } else {
                     return Err(e);
                 }
             }
-            Ok(p) => p,
+            Ok(p) => ValidatedField::Parsed(p),
         };
 
         let path_pattern_text = self.search_fields.path_pattern().text();
         let path_pattern = if path_pattern_text.is_empty() {
-            None
+            ValidatedField::Parsed(None)
         } else {
             match Regex::new(path_pattern_text.as_str()) {
                 Err(e) => {
-                    info!("Error when parsing filname pattern regex {}", e);
                     self.search_fields
                         .path_pattern_mut()
-                        .set_error("Couldn't parse regex".to_owned());
-                    return Ok(None);
+                        .set_error("Couldn't parse regex".to_owned(), e.to_string());
+                    ValidatedField::Error
                 }
-                Ok(r) => Some(r),
+                Ok(r) => ValidatedField::Parsed(Some(r)),
+            }
+        };
+
+        let (search_pattern, path_pattern) = match (search_pattern, path_pattern) {
+            (ValidatedField::Parsed(s), ValidatedField::Parsed(p)) => (s, p),
+            _ => {
+                self.search_fields.show_error_popup = true;
+                return Ok(None);
             }
         };
 
