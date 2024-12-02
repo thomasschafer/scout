@@ -17,7 +17,6 @@ fn test_text_field_operations() {
     assert_eq!(field.text(), "Hello");
     assert_eq!(field.cursor_idx(), 5);
 
-    // Test cursor movement
     field.move_cursor_left();
     assert_eq!(field.cursor_idx(), 4);
     field.move_cursor_right();
@@ -27,7 +26,6 @@ fn test_text_field_operations() {
     field.move_cursor_end();
     assert_eq!(field.cursor_idx(), 5);
 
-    // Test word movement
     field.clear();
     for c in "Hello world".chars() {
         field.enter_char(c);
@@ -68,7 +66,6 @@ fn test_checkbox_field() {
     field.handle_keys(KeyCode::Char(' '), KeyModifiers::empty());
     assert!(!field.checked);
 
-    // Test that other keys don't affect the checkbox
     field.handle_keys(KeyCode::Enter, KeyModifiers::empty());
     assert!(!field.checked);
 }
@@ -95,6 +92,7 @@ fn test_search_fields() {
             },
         ],
         highlighted: 0,
+        show_error_popup: false,
     };
 
     // Test focus navigation

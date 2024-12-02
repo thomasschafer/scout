@@ -1,10 +1,9 @@
 use itertools::Itertools;
 use ratatui::{
-    layout::Constraint,
-    layout::{Alignment, Direction, Flex, Layout, Rect},
-    style::{Color, Style},
+    layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
+    style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, List, ListItem, Paragraph},
+    widgets::{Block, Clear, List, ListItem, Paragraph, Wrap},
     Frame,
 };
 use similar::{Change, ChangeTag, TextDiff};
@@ -52,8 +51,52 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             )
         });
 
-    let highlighted_area = areas[app.search_fields.highlighted];
-    if let Some(cursor_idx) = app.search_fields.highlighted_field().read().cursor_idx() {
+    if app.search_fields.show_error_popup {
+        let error_lines: Vec<Line<'_>> = app
+            .search_fields
+            .errors()
+            .iter()
+            .flat_map(|(name, error)| {
+                let name_line = Line::from(vec![Span::styled(*name, Style::default().bold())]);
+
+                let error_lines: Vec<Line<'_>> = error
+                    .long
+                    .lines()
+                    .map(|line| {
+                        Line::from(vec![Span::styled(
+                            format!("  {line}"),
+                            Style::default().fg(Color::Red),
+                        )])
+                    })
+                    .collect();
+
+                std::iter::once(name_line)
+                    .chain(error_lines)
+                    .chain(std::iter::once(Line::from("")))
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+
+        let content_height = error_lines.len() as u16 + 1;
+
+        let popup_area = center(
+            area,
+            Constraint::Percentage(80),
+            Constraint::Length(content_height),
+        );
+
+        let popup = Paragraph::new(error_lines)
+            .block(
+                Block::bordered()
+                    .title("Errors")
+                    .title_alignment(Alignment::Center),
+            )
+            .wrap(Wrap { trim: true });
+        frame.render_widget(Clear, popup_area);
+        frame.render_widget(popup, popup_area);
+    } else if let Some(cursor_idx) = app.search_fields.highlighted_field().read().cursor_idx() {
+        let highlighted_area = areas[app.search_fields.highlighted];
+
         frame.set_cursor(
             highlighted_area.x + cursor_idx as u16 + 1,
             highlighted_area.y + 1,

@@ -7,11 +7,17 @@ use ratatui::{
     Frame,
 };
 
+#[derive(Clone)]
+pub struct FieldError {
+    pub short: String,
+    pub long: String,
+}
+
 #[derive(Default)]
 pub struct TextField {
     pub text: String,
     pub cursor_idx: usize,
-    pub error: Option<String>,
+    pub error: Option<FieldError>,
 }
 
 impl TextField {
@@ -151,8 +157,8 @@ impl TextField {
         self.cursor_idx = 0;
     }
 
-    pub fn set_error(&mut self, error: String) {
-        self.error = Some(error);
+    pub fn set_error(&mut self, short: String, long: String) {
+        self.error = Some(FieldError { short, long });
     }
 
     pub fn clear_error(&mut self) {
@@ -213,7 +219,7 @@ impl TextField {
 
 pub struct CheckboxField {
     pub checked: bool,
-    pub error: Option<String>, // TODO: render this
+    pub error: Option<FieldError>, // Not used currently so not rendered
 }
 
 impl CheckboxField {
@@ -246,6 +252,7 @@ impl Field {
     }
 
     pub fn handle_keys(&mut self, code: KeyCode, modifiers: KeyModifiers) {
+        self.clear_error();
         match self {
             Field::Text(f) => f.handle_keys(code, modifiers),
             Field::Checkbox(f) => f.handle_keys(code, modifiers),
@@ -259,14 +266,6 @@ impl Field {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn set_error(&mut self, error: String) {
-        match self {
-            Field::Text(f) => f.set_error(error),
-            Field::Checkbox(_) => todo!(),
-        }
-    }
-
     pub fn clear_error(&mut self) {
         match self {
             Field::Text(f) => f.clear_error(),
@@ -274,7 +273,7 @@ impl Field {
         }
     }
 
-    fn error(&self) -> Option<String> {
+    pub fn error(&self) -> Option<FieldError> {
         match self {
             Field::Text(f) => f.error.clone(),
             Field::Checkbox(f) => f.error.clone(),
@@ -320,9 +319,9 @@ impl Field {
             }
         }
 
-        if let Some(error_string) = self.error() {
+        if let Some(error) = self.error() {
             frame.render_widget(
-                Paragraph::new(Text::styled(format!("Error: {error_string}"), Color::Red)),
+                Paragraph::new(Text::styled(format!("Error: {}", error.short), Color::Red)),
                 outer_chunks[1],
             );
         };
