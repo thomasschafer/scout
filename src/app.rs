@@ -494,26 +494,29 @@ impl App {
     }
 
     fn handle_key_searching(&mut self, key: &KeyEvent) -> bool {
-        self.search_fields.show_error_popup = false;
-        match (key.code, key.modifiers) {
-            (KeyCode::Enter, _) => {
-                self.app_event_sender.send(AppEvent::PerformSearch).unwrap();
-            }
-            (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
-                self.search_fields.focus_prev();
-            }
-            (KeyCode::Tab, _) => {
-                self.search_fields.focus_next();
-            }
-            (code, modifiers) => {
-                if let FieldName::FixedStrings = self.search_fields.highlighted_field_name() {
-                    // TODO: ideally this should only happen when the field is checked, but for now this will do
-                    self.search_fields.search_mut().clear_error();
-                };
-                self.search_fields
-                    .highlighted_field()
-                    .write()
-                    .handle_keys(code, modifiers);
+        if self.search_fields.show_error_popup {
+            self.search_fields.show_error_popup = false;
+        } else {
+            match (key.code, key.modifiers) {
+                (KeyCode::Enter, _) => {
+                    self.app_event_sender.send(AppEvent::PerformSearch).unwrap();
+                }
+                (KeyCode::BackTab, _) | (KeyCode::Tab, KeyModifiers::ALT) => {
+                    self.search_fields.focus_prev();
+                }
+                (KeyCode::Tab, _) => {
+                    self.search_fields.focus_next();
+                }
+                (code, modifiers) => {
+                    if let FieldName::FixedStrings = self.search_fields.highlighted_field_name() {
+                        // TODO: ideally this should only happen when the field is checked, but for now this will do
+                        self.search_fields.search_mut().clear_error();
+                    };
+                    self.search_fields
+                        .highlighted_field()
+                        .write()
+                        .handle_keys(code, modifiers);
+                }
             }
         };
         false
@@ -568,16 +571,11 @@ impl App {
         }
 
         match (key.code, key.modifiers) {
-            (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL) => {
-                let exit = match &self.current_screen {
-                    Screen::SearchFields if self.search_fields.show_error_popup => {
-                        self.search_fields.show_error_popup = false;
-                        false
-                    }
-                    _ => true,
-                };
+            (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL)
+                if !self.search_fields.show_error_popup =>
+            {
                 return Ok(EventHandlingResult {
-                    exit,
+                    exit: true,
                     rerender: true,
                 });
             }
