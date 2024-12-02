@@ -50,6 +50,7 @@ pub struct EventHandler {
     pub app_event_sender: mpsc::UnboundedSender<AppEvent>,
 }
 
+#[derive(Debug)]
 pub struct EventHandlingResult {
     pub exit: bool,
     pub rerender: bool,

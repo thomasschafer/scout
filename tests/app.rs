@@ -121,6 +121,42 @@ async fn test_back_from_results() {
     assert!(matches!(app.current_screen, Screen::SearchFields));
 }
 
+// TODO: replace this (and other tests?) with end-to-end tests
+#[tokio::test]
+async fn test_error_popup() {
+    let events = EventHandler::new();
+    let mut app = App::new(None, false, events.app_event_sender.clone());
+    app.current_screen = Screen::SearchFields;
+    app.search_fields =
+        SearchFields::with_values("search invalid regex(", "replacement", false, "");
+
+    let res = app.perform_search_if_valid();
+    assert!(!res.exit);
+    assert!(matches!(app.current_screen, Screen::SearchFields));
+    assert!(app.search_fields.show_error_popup);
+
+    let res = app
+        .handle_key_events(&KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+        .unwrap();
+    assert!(!res.exit);
+    assert!(!app.search_fields.show_error_popup);
+
+    let res = app
+        .handle_key_events(&KeyEvent {
+            code: KeyCode::Esc,
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        })
+        .unwrap();
+    assert!(res.exit);
+}
+
 macro_rules! create_test_files {
     ($($name:expr => {$($line:expr),+ $(,)?}),+ $(,)?) => {
         {
