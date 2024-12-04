@@ -1,4 +1,5 @@
 use content_inspector::{inspect, ContentType};
+use fancy_regex::Regex as FancyRegex;
 use ignore::{WalkBuilder, WalkParallel};
 use log::warn;
 use regex::Regex;
@@ -17,6 +18,7 @@ use crate::{
 #[derive(Clone, Debug)]
 pub enum SearchType {
     Pattern(Regex),
+    PatternAdvanced(FancyRegex),
     Fixed(String),
 }
 
@@ -111,6 +113,13 @@ impl ParsedFields {
             }
             SearchType::Pattern(ref p) => {
                 if p.is_match(&line) {
+                    Some(p.replace_all(&line, &self.replace_string).to_string())
+                } else {
+                    None
+                }
+            }
+            SearchType::PatternAdvanced(ref p) => {
+                if p.is_match(&line).unwrap() {
                     Some(p.replace_all(&line, &self.replace_string).to_string())
                 } else {
                     None

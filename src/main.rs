@@ -40,6 +40,10 @@ struct Args {
         default_value = DEFAULT_LOG_LEVEL
     )]
     log_level: LevelFilter,
+
+    /// Use advanced regex features (including negative look-ahead), at the cost of performance
+    #[arg(short = 'a', long, default_value = "false")]
+    advanced_regex: bool,
 }
 
 fn parse_log_level(s: &str) -> Result<LevelFilter, String> {
@@ -52,8 +56,6 @@ async fn main() -> anyhow::Result<()> {
 
     setup_logging(args.log_level)?;
 
-    let args = Args::parse();
-
     let directory = match args.directory {
         None => None,
         Some(d) => Some(validate_directory(&d)?),
@@ -61,7 +63,12 @@ async fn main() -> anyhow::Result<()> {
 
     let app_events_handler = EventHandler::new();
     let app_event_sender = app_events_handler.app_event_sender.clone();
-    let mut app = App::new(directory, args.hidden, app_event_sender);
+    let mut app = App::new(
+        directory,
+        args.hidden,
+        args.advanced_regex,
+        app_event_sender,
+    );
 
     let backend = CrosstermBackend::new(io::stdout());
     let terminal = Terminal::new(backend)?;
