@@ -57,6 +57,13 @@ impl SearchState {
             self.selected = self.results.len().saturating_sub(1);
         }
     }
+
+    pub fn toggle_all_selected(&mut self) {
+        let any_included = self.results.iter().any(|res| res.included);
+        self.results
+            .iter_mut()
+            .for_each(|res| res.included = !any_included);
+    }
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -538,6 +545,11 @@ impl App {
                 self.current_screen
                     .search_results_mut()
                     .toggle_selected_inclusion();
+            }
+            (KeyCode::Char('a'), _) => {
+                self.current_screen
+                    .search_results_mut()
+                    .toggle_all_selected();
             }
             (KeyCode::Enter, _) => {
                 if matches!(self.current_screen, Screen::SearchComplete(_)) {

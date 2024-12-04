@@ -456,6 +456,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
             };
             keys.append(&mut vec![
                 "<space> toggle",
+                "<a> toggle all",
                 "<j> down",
                 "<k> up",
                 "<C-o> back",
