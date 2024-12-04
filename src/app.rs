@@ -59,10 +59,10 @@ impl SearchState {
     }
 
     pub fn toggle_all_selected(&mut self) {
-        let any_included = self.results.iter().any(|res| res.included);
+        let all_included = self.results.iter().all(|res| res.included);
         self.results
             .iter_mut()
-            .for_each(|res| res.included = !any_included);
+            .for_each(|res| res.included = !all_included);
     }
 }
 
@@ -795,6 +795,97 @@ mod tests {
     fn random_num() -> usize {
         let mut rng = rand::thread_rng();
         rng.gen_range(1..10000)
+    }
+
+    fn search_result(included: bool) -> SearchResult {
+        SearchResult {
+            path: Path::new("random/file").to_path_buf(),
+            line_number: random_num(),
+            line: "foo".to_owned(),
+            replacement: "bar".to_owned(),
+            included,
+            replace_result: None,
+        }
+    }
+
+    #[test]
+    fn test_toggle_all_selected_when_all_selected() {
+        let mut search_state = SearchState {
+            results: vec![
+                search_result(true),
+                search_result(true),
+                search_result(true),
+            ],
+            selected: 0,
+        };
+        search_state.toggle_all_selected();
+        assert_eq!(
+            search_state
+                .results
+                .iter()
+                .map(|res| res.included)
+                .collect::<Vec<_>>(),
+            vec![false, false, false]
+        );
+    }
+
+    #[test]
+    fn test_toggle_all_selected_when_none_selected() {
+        let mut search_state = SearchState {
+            results: vec![
+                search_result(false),
+                search_result(false),
+                search_result(false),
+            ],
+            selected: 0,
+        };
+        search_state.toggle_all_selected();
+        assert_eq!(
+            search_state
+                .results
+                .iter()
+                .map(|res| res.included)
+                .collect::<Vec<_>>(),
+            vec![true, true, true]
+        );
+    }
+
+    #[test]
+    fn test_toggle_all_selected_when_some_selected() {
+        let mut search_state = SearchState {
+            results: vec![
+                search_result(true),
+                search_result(false),
+                search_result(true),
+            ],
+            selected: 0,
+        };
+        search_state.toggle_all_selected();
+        assert_eq!(
+            search_state
+                .results
+                .iter()
+                .map(|res| res.included)
+                .collect::<Vec<_>>(),
+            vec![true, true, true]
+        );
+    }
+
+    #[test]
+    fn test_toggle_all_selected_when_no_results() {
+        let mut search_state = SearchState {
+            results: vec![],
+            selected: 0,
+        };
+        search_state.toggle_all_selected();
+        assert_eq!(
+            search_state
+                .results
+                .iter()
+                .map(|res| res.included)
+                .collect::<Vec<_>>(),
+            vec![] as Vec<bool>
+        );
     }
 
     fn success_result() -> SearchResult {
