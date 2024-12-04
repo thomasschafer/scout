@@ -82,7 +82,7 @@ async fn test_replace_state() {
 #[tokio::test]
 async fn test_app_reset() {
     let events = EventHandler::new();
-    let mut app = App::new(None, false, events.app_event_sender);
+    let mut app = App::new(None, false, false, events.app_event_sender);
     app.current_screen = Screen::Results(ReplaceState {
         num_successes: 5,
         num_ignored: 2,
@@ -98,7 +98,7 @@ async fn test_app_reset() {
 #[tokio::test]
 async fn test_back_from_results() {
     let events = EventHandler::new();
-    let mut app = App::new(None, false, events.app_event_sender);
+    let mut app = App::new(None, false, false, events.app_event_sender);
     app.current_screen = Screen::SearchComplete(SearchState {
         results: vec![],
         selected: 0,
@@ -125,7 +125,7 @@ async fn test_back_from_results() {
 #[tokio::test]
 async fn test_error_popup() {
     let events = EventHandler::new();
-    let mut app = App::new(None, false, events.app_event_sender.clone());
+    let mut app = App::new(None, false, false, events.app_event_sender.clone());
     app.current_screen = Screen::SearchFields;
     app.search_fields =
         SearchFields::with_values("search invalid regex(", "replacement", false, "");
@@ -281,6 +281,7 @@ fn setup_app(temp_dir: &TempDir, search_fields: SearchFields, include_hidden: bo
     let mut app = App::new(
         Some(temp_dir.path().to_path_buf()),
         include_hidden,
+        false,
         events.app_event_sender,
     );
     app.search_fields = search_fields;

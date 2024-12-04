@@ -93,6 +93,7 @@ fn test_search_fields() {
         ],
         highlighted: 0,
         show_error_popup: false,
+        advanced_regex: false,
     };
 
     // Test focus navigation
@@ -139,7 +140,7 @@ fn test_search_fields() {
     let search_type = search_fields.search_type().unwrap();
     match search_type {
         SearchType::Fixed(s) => assert_eq!(s, "test search"),
-        SearchType::Pattern(_) => panic!("Expected Fixed, got Pattern"),
+        _ => panic!("Expected Fixed, got {:?}", search_type),
     }
 
     search_fields
@@ -149,6 +150,6 @@ fn test_search_fields() {
     let search_type = search_fields.search_type().unwrap();
     match search_type {
         SearchType::Pattern(_) => {}
-        SearchType::Fixed(_) => panic!("Expected Pattern, got Fixed"),
+        _ => panic!("Expected Pattern, got {:?}", search_type),
     }
 }
