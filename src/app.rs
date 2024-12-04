@@ -1,3 +1,4 @@
+use fancy_regex::Regex as FancyRegex;
 use ignore::WalkState;
 use itertools::Itertools;
 use parking_lot::{
@@ -182,6 +183,7 @@ pub struct SearchFields {
     pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
     pub show_error_popup: bool,
+    pub advanced_regex: bool,
 }
 
 macro_rules! define_field_accessor {
@@ -264,6 +266,7 @@ impl SearchFields {
             ],
             highlighted: 0,
             show_error_popup: false,
+            advanced_regex: false,
         }
     }
 
@@ -306,6 +309,8 @@ impl SearchFields {
         let search_text = search.text();
         let result = if self.fixed_strings().checked {
             SearchType::Fixed(search_text)
+        } else if self.advanced_regex {
+            SearchType::PatternAdvanced(FancyRegex::new(&search_text)?)
         } else {
             SearchType::Pattern(Regex::new(&search_text)?)
         };
@@ -334,17 +339,20 @@ impl App {
     pub fn new(
         directory: Option<PathBuf>,
         include_hidden: bool,
+        advanced_regex: bool,
         app_event_sender: UnboundedSender<AppEvent>,
     ) -> Self {
         let directory = match directory {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
         };
+        let mut search_fields = SearchFields::with_values("", "", false, "");
+        search_fields.advanced_regex = advanced_regex;
 
         Self {
             current_screen: Screen::SearchFields,
-            search_fields: SearchFields::with_values("", "", false, ""),
-            directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
+            search_fields,
+            directory,
             include_hidden,
 
             running: true,
@@ -366,6 +374,7 @@ impl App {
         *self = Self::new(
             Some(self.directory.clone()),
             self.include_hidden,
+            self.search_fields.advanced_regex,
             self.app_event_sender.clone(),
         );
     }
@@ -923,7 +932,7 @@ mod tests {
 
     fn build_test_app(results: Vec<SearchResult>) -> App {
         let event_handler = EventHandler::new();
-        let mut app = App::new(None, false, event_handler.app_event_sender);
+        let mut app = App::new(None, false, false, event_handler.app_event_sender);
         app.current_screen = Screen::SearchComplete(SearchState {
             results,
             selected: 0,
