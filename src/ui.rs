@@ -449,7 +449,6 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         }
         Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
             let mut keys = if let Screen::SearchComplete(_) = app.current_screen {
-                // TODO: actually prevent confirmation when search is in progress
                 vec!["<enter> replace"]
             } else {
                 vec![]
