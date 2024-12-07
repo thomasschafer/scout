@@ -26,7 +26,7 @@ pub enum SearchType {
 pub struct ParsedFields {
     search_pattern: SearchType,
     replace_string: String,
-    path_pattern: Option<Regex>,
+    path_pattern: Option<SearchType>,
     // TODO: `root_dir` and `include_hidden` are duplicated across this and App
     root_dir: PathBuf,
     include_hidden: bool,
@@ -38,7 +38,7 @@ impl ParsedFields {
     pub fn new(
         search_pattern: SearchType,
         replace_string: String,
-        path_pattern: Option<Regex>,
+        path_pattern: Option<SearchType>,
         root_dir: PathBuf,
         include_hidden: bool,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
@@ -55,7 +55,14 @@ impl ParsedFields {
 
     pub fn handle_path(&self, path: &Path) {
         if let Some(ref p) = self.path_pattern {
-            let matches_pattern = p.is_match(relative_path_from(&self.root_dir, path).as_str());
+            let relative_path = relative_path_from(&self.root_dir, path);
+            let relative_path = relative_path.as_str();
+
+            let matches_pattern = match p {
+                SearchType::Pattern(ref p) => p.is_match(relative_path),
+                SearchType::PatternAdvanced(ref p) => p.is_match(relative_path).unwrap(),
+                SearchType::Fixed(ref s) => relative_path.contains(s),
+            };
             if !matches_pattern {
                 return;
             }
