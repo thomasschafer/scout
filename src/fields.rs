@@ -7,7 +7,7 @@ use ratatui::{
     Frame,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FieldError {
     pub short: String,
     pub long: String,
