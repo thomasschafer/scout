@@ -76,7 +76,7 @@ async fn main() -> anyhow::Result<()> {
     tui.init()?;
     tui.draw(&mut app)?;
 
-    while app.running {
+    loop {
         let EventHandlingResult { exit, rerender } = tokio::select! {
             Some(event) = tui.events.receiver.recv() => {
                 match event {

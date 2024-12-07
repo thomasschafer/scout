@@ -349,247 +349,284 @@ async fn search_and_replace_test(
     }
 }
 
-#[tokio::test]
-async fn test_perform_search_fixed_string() {
-    let temp_dir = create_test_files! {
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something",
-        }
-    };
+macro_rules! test_with_both_regex_modes {
+    ($name:ident, $test_fn:expr) => {
+        mod $name {
+            use super::*;
 
-    search_and_replace_test(
-        &temp_dir,
-        SearchFields::with_values(".*", "example", true, ""),
-        false,
-        vec![
-            (Path::new("file1.txt"), 0),
-            (Path::new("file2.txt"), 0),
-            (Path::new("file3.txt"), 1),
-        ],
-    )
-    .await;
+            #[tokio::test]
+            async fn with_advanced_regex() {
+                ($test_fn)(true).await;
+            }
 
-    assert_test_files! {
-        &temp_dir,
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+examplebar)(baz 456",
-            "something",
+            #[tokio::test]
+            async fn without_advanced_regex() {
+                ($test_fn)(false).await;
+            }
         }
     };
 }
 
-#[tokio::test]
-async fn test_update_search_results_regex() {
-    let temp_dir = &create_test_files! {
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something",
-        }
-    };
+test_with_both_regex_modes!(
+    test_perform_search_fixed_string,
+    |advanced_regex: bool| async move {
+        let temp_dir = create_test_files! {
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something",
+            }
+        };
 
-    search_and_replace_test(
-        temp_dir,
-        SearchFields::with_values(r"\b\w+ing\b", "VERB", false, ""),
-        false,
-        vec![
-            (Path::new("file1.txt"), 1),
-            (Path::new("file2.txt"), 1),
-            (Path::new("file3.txt"), 2),
-        ],
-    )
-    .await;
+        let search_fields = SearchFields::with_values(".*", "example", true, "")
+            .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            &temp_dir,
+            search_fields,
+            false,
+            vec![
+                (Path::new("file1.txt"), 0),
+                (Path::new("file2.txt"), 0),
+                (Path::new("file3.txt"), 1),
+            ],
+        )
+        .await;
 
-    assert_test_files! {
-        temp_dir,
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For VERB purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for VERB",
-        },
-        "file3.txt" => {
-            "VERB",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "VERB",
-        }
-    };
-}
+        assert_test_files! {
+            &temp_dir,
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+examplebar)(baz 456",
+                "something",
+            }
+        };
+    }
+);
 
-#[tokio::test]
-async fn test_update_search_results_no_matches() {
-    let temp_dir = &create_test_files! {
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something",
-        }
-    };
+test_with_both_regex_modes!(
+    test_update_search_results_regex,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something",
+            }
+        };
 
-    search_and_replace_test(
-        temp_dir,
-        SearchFields::with_values(r"nonexistent-string", "replacement", true, ""),
-        false,
-        vec![
-            (Path::new("file1.txt"), 0),
-            (Path::new("file2.txt"), 0),
-            (Path::new("file3.txt"), 0),
-        ],
-    )
-    .await;
+        let search_fields = SearchFields::with_values(r"\b\w+ing\b", "VERB", false, "")
+            .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            temp_dir,
+            search_fields,
+            false,
+            vec![
+                (Path::new("file1.txt"), 1),
+                (Path::new("file2.txt"), 1),
+                (Path::new("file3.txt"), 2),
+            ],
+        )
+        .await;
 
-    assert_test_files! {
-        temp_dir,
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something",
-        }
-    };
-}
+        assert_test_files! {
+            temp_dir,
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For VERB purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for VERB",
+            },
+            "file3.txt" => {
+                "VERB",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "VERB",
+            }
+        };
+    }
+);
 
-#[tokio::test]
-async fn test_update_search_results_invalid_regex() {
-    let temp_dir = &create_test_files! {
-        "file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something",
-        }
-    };
+test_with_both_regex_modes!(
+    test_update_search_results_no_matches,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something",
+            }
+        };
 
-    let search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false, "");
-    let mut app = setup_app(temp_dir, search_fields, false);
+        let search_fields =
+            SearchFields::with_values(r"nonexistent-string", "replacement", true, "")
+                .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            temp_dir,
+            search_fields,
+            false,
+            vec![
+                (Path::new("file1.txt"), 0),
+                (Path::new("file2.txt"), 0),
+                (Path::new("file3.txt"), 0),
+            ],
+        )
+        .await;
 
-    let res = app.perform_search_if_valid();
-    assert!(!res.exit);
-    assert!(matches!(app.current_screen, Screen::SearchFields));
-    process_bp_events(&mut app).await;
-    assert!(!wait_for_screen!(&app, Screen::SearchComplete)); // We shouldn't get to the SearchComplete page, so assert that we never get there
-    assert!(matches!(app.current_screen, Screen::SearchFields));
-}
+        assert_test_files! {
+            temp_dir,
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something",
+            }
+        };
+    }
+);
 
-#[tokio::test]
-async fn test_update_search_results_filtered_dir() {
-    let temp_dir = &create_test_files! {
-        "dir1/file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "dir2/file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for testing",
-        },
-        "dir2/file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something testing",
-        }
-    };
+test_with_both_regex_modes!(
+    test_update_search_results_invalid_regex,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something",
+            }
+        };
 
-    search_and_replace_test(
-        temp_dir,
-        SearchFields::with_values(r"testing", "f", false, "dir2"),
-        false,
-        vec![
-            (&Path::new("dir1").join("file1.txt"), 0),
-            (&Path::new("dir2").join("file2.txt"), 1),
-            (&Path::new("dir2").join("file3.txt"), 1),
-        ],
-    )
-    .await;
+        let search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false, "")
+            .with_advanced_regex(advanced_regex);
+        let mut app = setup_app(temp_dir, search_fields, false);
 
-    assert_test_files! {
-        temp_dir,
-        "dir1/file1.txt" => {
-            "This is a test file",
-            "It contains some test content",
-            "For testing purposes",
-        },
-        "dir2/file2.txt" => {
-            "Another test file",
-            "With different content",
-            "Also for f",
-        },
-        "dir2/file3.txt" => {
-            "something",
-            "123 bar[a-b]+.*bar)(baz 456",
-            "something f",
-        }
-    };
-}
+        let res = app.perform_search_if_valid();
+        assert!(!res.exit);
+        assert!(matches!(app.current_screen, Screen::SearchFields));
+        process_bp_events(&mut app).await;
+        assert!(!wait_for_screen!(&app, Screen::SearchComplete)); // We shouldn't get to the SearchComplete page, so assert that we never get there
+        assert!(matches!(app.current_screen, Screen::SearchFields));
+    }
+);
 
-#[tokio::test]
-async fn test_ignores_gif_file() {
+test_with_both_regex_modes!(
+    test_update_search_results_filtered_dir,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "dir1/file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "dir2/file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for testing",
+            },
+            "dir2/file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something testing",
+            }
+        };
+
+        let search_fields = SearchFields::with_values(r"testing", "f", false, "dir2")
+            .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            temp_dir,
+            search_fields,
+            false,
+            vec![
+                (&Path::new("dir1").join("file1.txt"), 0),
+                (&Path::new("dir2").join("file2.txt"), 1),
+                (&Path::new("dir2").join("file3.txt"), 1),
+            ],
+        )
+        .await;
+
+        assert_test_files! {
+            temp_dir,
+            "dir1/file1.txt" => {
+                "This is a test file",
+                "It contains some test content",
+                "For testing purposes",
+            },
+            "dir2/file2.txt" => {
+                "Another test file",
+                "With different content",
+                "Also for f",
+            },
+            "dir2/file3.txt" => {
+                "something",
+                "123 bar[a-b]+.*bar)(baz 456",
+                "something f",
+            }
+        };
+    }
+);
+
+test_with_both_regex_modes!(test_ignores_gif_file, |advanced_regex: bool| async move {
     let temp_dir = &create_test_files! {
         "dir1/file1.txt" => {
             "This is a text file",
@@ -602,9 +639,11 @@ async fn test_ignores_gif_file() {
         }
     };
 
+    let search_fields =
+        SearchFields::with_values(r"is", "", false, "").with_advanced_regex(advanced_regex);
     search_and_replace_test(
         temp_dir,
-        SearchFields::with_values(r"is", "", false, ""),
+        search_fields,
         false,
         vec![
             (&Path::new("dir1").join("file1.txt"), 1),
@@ -626,87 +665,95 @@ async fn test_ignores_gif_file() {
             "Th  a text file",
         }
     };
-}
+});
 
-#[tokio::test]
-async fn test_ignores_hidden_files_by_default() {
-    let temp_dir = &create_test_files! {
-        "dir1/file1.txt" => {
-            "This is a text file",
-        },
-        ".dir2/file2.rs" => {
-            "This is a file in a hidden directory",
-        },
-        ".file3.txt" => {
-            "This is a hidden text file",
-        }
-    };
+test_with_both_regex_modes!(
+    test_ignores_hidden_files_by_default,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "dir1/file1.txt" => {
+                "This is a text file",
+            },
+            ".dir2/file2.rs" => {
+                "This is a file in a hidden directory",
+            },
+            ".file3.txt" => {
+                "This is a hidden text file",
+            }
+        };
 
-    search_and_replace_test(
-        temp_dir,
-        SearchFields::with_values(r"\bis\b", "REPLACED", false, ""),
-        false,
-        vec![
-            (&Path::new("dir1").join("file1.txt"), 1),
-            (&Path::new(".dir2").join("file2.rs"), 0),
-            (Path::new(".file3.txt"), 0),
-        ],
-    )
-    .await;
+        let search_fields = SearchFields::with_values(r"\bis\b", "REPLACED", false, "")
+            .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            temp_dir,
+            search_fields,
+            false,
+            vec![
+                (&Path::new("dir1").join("file1.txt"), 1),
+                (&Path::new(".dir2").join("file2.rs"), 0),
+                (Path::new(".file3.txt"), 0),
+            ],
+        )
+        .await;
 
-    assert_test_files! {
-        temp_dir,
-        "dir1/file1.txt" => {
-            "This REPLACED a text file",
-        },
-        ".dir2/file2.rs" => {
-            "This is a file in a hidden directory",
-        },
-        ".file3.txt" => {
-            "This is a hidden text file",
-        }
-    };
-}
+        assert_test_files! {
+            temp_dir,
+            "dir1/file1.txt" => {
+                "This REPLACED a text file",
+            },
+            ".dir2/file2.rs" => {
+                "This is a file in a hidden directory",
+            },
+            ".file3.txt" => {
+                "This is a hidden text file",
+            }
+        };
+    }
+);
 
-#[tokio::test]
-async fn test_includes_hidden_files_with_flag() {
-    let temp_dir = &create_test_files! {
-        "dir1/file1.txt" => {
-            "This is a text file",
-        },
-        ".dir2/file2.rs" => {
-            "This is a file in a hidden directory",
-        },
-        ".file3.txt" => {
-            "This is a hidden text file",
-        }
-    };
+test_with_both_regex_modes!(
+    test_includes_hidden_files_with_flag,
+    |advanced_regex: bool| async move {
+        let temp_dir = &create_test_files! {
+            "dir1/file1.txt" => {
+                "This is a text file",
+            },
+            ".dir2/file2.rs" => {
+                "This is a file in a hidden directory",
+            },
+            ".file3.txt" => {
+                "This is a hidden text file",
+            }
+        };
 
-    search_and_replace_test(
-        temp_dir,
-        SearchFields::with_values(r"\bis\b", "REPLACED", false, ""),
-        true,
-        vec![
-            (&Path::new("dir1").join("file1.txt"), 1),
-            (&Path::new(".dir2").join("file2.rs"), 1),
-            (Path::new(".file3.txt"), 1),
-        ],
-    )
-    .await;
+        let search_fields = SearchFields::with_values(r"\bis\b", "REPLACED", false, "")
+            .with_advanced_regex(advanced_regex);
+        search_and_replace_test(
+            temp_dir,
+            search_fields,
+            true,
+            vec![
+                (&Path::new("dir1").join("file1.txt"), 1),
+                (&Path::new(".dir2").join("file2.rs"), 1),
+                (Path::new(".file3.txt"), 1),
+            ],
+        )
+        .await;
 
-    assert_test_files! {
-        temp_dir,
-        "dir1/file1.txt" => {
-            "This REPLACED a text file",
-        },
-        ".dir2/file2.rs" => {
-            "This REPLACED a file in a hidden directory",
-        },
-        ".file3.txt" => {
-            "This REPLACED a hidden text file",
-        }
-    };
-}
+        assert_test_files! {
+            temp_dir,
+            "dir1/file1.txt" => {
+                "This REPLACED a text file",
+            },
+            ".dir2/file2.rs" => {
+                "This REPLACED a file in a hidden directory",
+            },
+            ".file3.txt" => {
+                "This REPLACED a hidden text file",
+            }
+        };
+    }
+);
 
 // TODO:
 // - Add:

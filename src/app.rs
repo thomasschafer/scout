@@ -183,7 +183,7 @@ pub struct SearchFields {
     pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
     pub show_error_popup: bool,
-    pub advanced_regex: bool,
+    advanced_regex: bool,
 }
 
 macro_rules! define_field_accessor {
@@ -270,6 +270,11 @@ impl SearchFields {
         }
     }
 
+    pub fn with_advanced_regex(mut self, advanced_regex: bool) -> Self {
+        self.advanced_regex = advanced_regex;
+        self
+    }
+
     fn highlighted_field_impl(&self) -> &SearchField {
         &self.fields[self.highlighted]
     }
@@ -326,11 +331,10 @@ enum ValidatedField<T> {
 pub struct App {
     pub current_screen: Screen,
     pub search_fields: SearchFields,
-    pub directory: PathBuf,
-    pub include_hidden: bool,
+    directory: PathBuf,
+    include_hidden: bool,
 
-    pub running: bool,
-    pub app_event_sender: UnboundedSender<AppEvent>,
+    app_event_sender: UnboundedSender<AppEvent>,
 }
 
 const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
@@ -346,8 +350,8 @@ impl App {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
         };
-        let mut search_fields = SearchFields::with_values("", "", false, "");
-        search_fields.advanced_regex = advanced_regex;
+        let search_fields =
+            SearchFields::with_values("", "", false, "").with_advanced_regex(advanced_regex);
 
         Self {
             current_screen: Screen::SearchFields,
@@ -355,7 +359,6 @@ impl App {
             directory,
             include_hidden,
 
-            running: true,
             app_event_sender,
         }
     }
