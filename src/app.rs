@@ -1,3 +1,4 @@
+use anyhow::Error;
 use fancy_regex::Regex as FancyRegex;
 use ignore::WalkState;
 use itertools::Itertools;
@@ -321,6 +322,22 @@ impl SearchFields {
         };
         Ok(result)
     }
+
+    pub fn path_pattern_parsed(&self) -> anyhow::Result<Option<SearchType>> {
+        let path_patt_text = &self.path_pattern().text;
+        let result = if path_patt_text.is_empty() {
+            None
+        } else {
+            Some({
+                if self.advanced_regex {
+                    SearchType::PatternAdvanced(FancyRegex::new(path_patt_text)?)
+                } else {
+                    SearchType::Pattern(Regex::new(path_patt_text)?)
+                }
+            })
+        };
+        Ok(result)
+    }
 }
 
 enum ValidatedField<T> {
@@ -627,13 +644,18 @@ impl App {
         })
     }
 
+    fn is_regex_error(e: &Error) -> bool {
+        e.downcast_ref::<regex::Error>().is_some()
+            || e.downcast_ref::<fancy_regex::Error>().is_some()
+    }
+
     fn validate_fields(
         &mut self,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> anyhow::Result<Option<ParsedFields>> {
         let search_pattern = match self.search_fields.search_type() {
             Err(e) => {
-                if e.downcast_ref::<regex::Error>().is_some() {
+                if Self::is_regex_error(&e) {
                     self.search_fields
                         .search_mut()
                         .set_error("Couldn't parse regex".to_owned(), e.to_string());
@@ -645,19 +667,14 @@ impl App {
             Ok(p) => ValidatedField::Parsed(p),
         };
 
-        let path_pattern_text = self.search_fields.path_pattern().text();
-        let path_pattern = if path_pattern_text.is_empty() {
-            ValidatedField::Parsed(None)
-        } else {
-            match Regex::new(path_pattern_text.as_str()) {
-                Err(e) => {
-                    self.search_fields
-                        .path_pattern_mut()
-                        .set_error("Couldn't parse regex".to_owned(), e.to_string());
-                    ValidatedField::Error
-                }
-                Ok(r) => ValidatedField::Parsed(Some(r)),
+        let path_pattern = match self.search_fields.path_pattern_parsed() {
+            Err(e) => {
+                self.search_fields
+                    .path_pattern_mut()
+                    .set_error("Couldn't parse regex".to_owned(), e.to_string());
+                ValidatedField::Error
             }
+            Ok(r) => ValidatedField::Parsed(r),
         };
 
         let (search_pattern, path_pattern) = match (search_pattern, path_pattern) {
