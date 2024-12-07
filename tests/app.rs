@@ -2,14 +2,16 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifi
 use scooter::{
     App, EventHandler, ReplaceResult, ReplaceState, Screen, SearchFields, SearchResult, SearchState,
 };
+use serial_test::serial;
 use std::cmp::max;
-use std::fs::{self, create_dir_all, File};
-use std::io::Write;
+use std::fs::{self, create_dir_all};
 use std::mem;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 use tempfile::TempDir;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 #[tokio::test]
 async fn test_search_state() {
@@ -167,15 +169,14 @@ macro_rules! create_test_files {
                 let path = Path::new(&path);
                 create_dir_all(path.parent().unwrap()).unwrap();
                 {
-                    let mut file = File::create(path).unwrap();
-                    file.write_all(contents.as_bytes()).unwrap();
-                    file.sync_all().unwrap();
+                    let mut file = File::create(path).await.unwrap();
+                    file.write_all(contents.as_bytes()).await.unwrap();
+                    file.sync_all().await.unwrap();
                 }
             )+
 
             #[cfg(windows)]
             sleep(Duration::from_millis(100));
-
             temp_dir
         }
     };
@@ -355,11 +356,13 @@ macro_rules! test_with_both_regex_modes {
             use super::*;
 
             #[tokio::test]
+            #[serial]
             async fn with_advanced_regex() {
                 ($test_fn)(true).await;
             }
 
             #[tokio::test]
+            #[serial]
             async fn without_advanced_regex() {
                 ($test_fn)(false).await;
             }
