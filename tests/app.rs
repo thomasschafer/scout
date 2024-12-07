@@ -355,6 +355,7 @@ macro_rules! test_with_both_regex_modes {
         mod $name {
             use super::*;
 
+            // TODO: run max n at a time, rather than serially
             #[tokio::test]
             #[serial]
             async fn with_advanced_regex() {
