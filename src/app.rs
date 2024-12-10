@@ -119,9 +119,9 @@ impl ReplaceState {
 pub struct SearchInProgressState {
     pub search_state: SearchState,
     pub last_render: Instant,
-    pub handle: JoinHandle<()>,
-    pub processing_sender: UnboundedSender<BackgroundProcessingEvent>,
-    pub processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
+    handle: JoinHandle<()>,
+    processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
 }
 
 impl SearchInProgressState {
@@ -153,7 +153,7 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub fn search_results_mut(&mut self) -> &mut SearchState {
+    fn search_results_mut(&mut self) -> &mut SearchState {
         match self {
             Screen::SearchProgressing(SearchInProgressState { search_state, .. }) => search_state,
             Screen::SearchComplete(search_state) => search_state,
