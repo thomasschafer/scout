@@ -84,6 +84,28 @@ cd scooter
 cargo install --path . --locked
 ```
 
+## Neovim configuration
+
+If you use Neovim you may want to set up Scooter to run as a floating terminal window, allowing you to use it without leaving your editor. To do so, install Toggleterm as per the instructions [here](https://github.com/akinsho/toggleterm.nvim?tab=readme-ov-file#installation), and then add the following Lua configuration, which opens up Scooter with `<leader>s`:
+
+```lua
+local Terminal = require("toggleterm.terminal").Terminal
+
+local scooter = Terminal:new({ cmd = "scooter", hidden = true })
+
+function _scooter_toggle()
+  scooter:toggle()
+end
+
+vim.keymap.set("n", "<leader>s", "<cmd>lua _scooter_toggle()<CR>", {
+  noremap = true,
+  silent = true,
+  desc = "Toggle Scooter"
+})
+```
+
+This can of course be tweaked to your liking.
+
 ## Contributing
 
 Contributions are very welcome! I'd be especially grateful for any contributions to add Scooter to popular package managers. If you'd like to add a new feature, please create an issue first so we can discuss the idea, then create a PR with your changes.
