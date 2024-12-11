@@ -1,10 +1,5 @@
-use parking_lot::RwLock;
 use ratatui::crossterm::event::{KeyCode, KeyModifiers};
-use scooter::{
-    parsed_fields::SearchType, CheckboxField, Field, FieldName, SearchField, SearchFields,
-    TextField,
-};
-use std::sync::Arc;
+use scooter::{parsed_fields::SearchType, CheckboxField, SearchFields, TextField};
 
 #[test]
 fn test_text_field_operations() {
@@ -72,28 +67,7 @@ fn test_checkbox_field() {
 
 #[test]
 fn test_search_fields() {
-    let mut search_fields = SearchFields {
-        fields: [
-            SearchField {
-                name: FieldName::Search,
-                field: Arc::new(RwLock::new(Field::text(""))),
-            },
-            SearchField {
-                name: FieldName::Replace,
-                field: Arc::new(RwLock::new(Field::text(""))),
-            },
-            SearchField {
-                name: FieldName::FixedStrings,
-                field: Arc::new(RwLock::new(Field::checkbox(false))),
-            },
-            SearchField {
-                name: FieldName::PathPattern,
-                field: Arc::new(RwLock::new(Field::text(""))),
-            },
-        ],
-        highlighted: 0,
-        show_error_popup: false,
-    };
+    let mut search_fields = SearchFields::with_values("", "", false, "");
 
     // Test focus navigation
     assert_eq!(search_fields.highlighted, 0);
@@ -139,7 +113,7 @@ fn test_search_fields() {
     let search_type = search_fields.search_type().unwrap();
     match search_type {
         SearchType::Fixed(s) => assert_eq!(s, "test search"),
-        SearchType::Pattern(_) => panic!("Expected Fixed, got Pattern"),
+        _ => panic!("Expected Fixed, got {:?}", search_type),
     }
 
     search_fields
@@ -149,6 +123,6 @@ fn test_search_fields() {
     let search_type = search_fields.search_type().unwrap();
     match search_type {
         SearchType::Pattern(_) => {}
-        SearchType::Fixed(_) => panic!("Expected Pattern, got Fixed"),
+        _ => panic!("Expected Pattern, got {:?}", search_type),
     }
 }
