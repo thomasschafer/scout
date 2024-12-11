@@ -84,9 +84,24 @@ cd scooter
 cargo install --path . --locked
 ```
 
-## Neovim configuration
+## Editor configuration
 
-If you use Neovim you may want to set up Scooter to run as a floating terminal window, allowing you to use it without leaving your editor. To do so, install Toggleterm as per the instructions [here](https://github.com/akinsho/toggleterm.nvim?tab=readme-ov-file#installation), and then add the following Lua configuration, which opens up Scooter with `<leader>s`:
+Below are a couple of ways to configure Scooter to run in a floating window, without leaving your editor.
+
+### Helix
+
+If you are using Helix in Tmux, you can add a keymap like the following:
+
+```toml
+[keys.select.ret]
+s = ":sh tmux popup -xC -yC -w90% -h90% -E scooter"
+```
+
+The above uses `<return-s>` but this can of course be changed.
+
+### Neovim
+
+Install Toggleterm as per the instructions [here](https://github.com/akinsho/toggleterm.nvim?tab=readme-ov-file#installation), and then add the following Lua configuration, which opens up Scooter with `<leader>s`:
 
 ```lua
 local Terminal = require("toggleterm.terminal").Terminal
