@@ -505,7 +505,7 @@ test_with_both_regex_modes!(
         };
 
         let search_fields =
-            SearchFields::with_values(r"nonexistent-string", "replacement", true, "")
+            SearchFields::with_values("nonexistent-string", "replacement", true, "")
                 .with_advanced_regex(advanced_regex);
         search_and_replace_test(
             temp_dir,
@@ -561,7 +561,7 @@ test_with_both_regex_modes!(
             }
         };
 
-        let search_fields = SearchFields::with_values(r"[invalid regex", "replacement", false, "")
+        let search_fields = SearchFields::with_values("[invalid regex", "replacement", false, "")
             .with_advanced_regex(advanced_regex);
         let mut app = setup_app(temp_dir, search_fields, false);
 
@@ -573,6 +573,61 @@ test_with_both_regex_modes!(
         assert!(matches!(app.current_screen, Screen::SearchFields));
     }
 );
+
+#[tokio::test]
+#[serial]
+async fn test_advanced_regex_negative_lookahead() {
+    let temp_dir = &create_test_files! {
+        "file1.txt" => {
+            "This is a test file",
+            "It contains some test content",
+            "For testing purposes",
+        },
+        "file2.txt" => {
+            "Another test file",
+            "With different content",
+            "Also for testing",
+        },
+        "file3.txt" => {
+            "something",
+            "123 bar[a-b]+.*bar)(baz 456",
+            "something",
+        }
+    };
+
+    let search_fields =
+        SearchFields::with_values("(test)(?!ing)", "BAR", false, "").with_advanced_regex(true);
+    search_and_replace_test(
+        temp_dir,
+        search_fields,
+        false,
+        vec![
+            (Path::new("file1.txt"), 2),
+            (Path::new("file2.txt"), 1),
+            (Path::new("file3.txt"), 0),
+        ],
+    )
+    .await;
+
+    assert_test_files! {
+        temp_dir,
+        "file1.txt" => {
+            "This is a BAR file",
+            "It contains some BAR content",
+            "For testing purposes",
+        },
+        "file2.txt" => {
+            "Another BAR file",
+            "With different content",
+            "Also for testing",
+        },
+        "file3.txt" => {
+            "something",
+            "123 bar[a-b]+.*bar)(baz 456",
+            "something",
+        }
+    };
+}
 
 test_with_both_regex_modes!(
     test_update_search_results_filtered_dir,
@@ -595,7 +650,7 @@ test_with_both_regex_modes!(
             }
         };
 
-        let search_fields = SearchFields::with_values(r"testing", "f", false, "dir2")
+        let search_fields = SearchFields::with_values("testing", "f", false, "dir2")
             .with_advanced_regex(advanced_regex);
         search_and_replace_test(
             temp_dir,
@@ -644,7 +699,7 @@ test_with_both_regex_modes!(test_ignores_gif_file, |advanced_regex: bool| async 
     };
 
     let search_fields =
-        SearchFields::with_values(r"is", "", false, "").with_advanced_regex(advanced_regex);
+        SearchFields::with_values("is", "", false, "").with_advanced_regex(advanced_regex);
     search_and_replace_test(
         temp_dir,
         search_fields,
