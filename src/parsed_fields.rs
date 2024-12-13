@@ -126,10 +126,10 @@ impl ParsedFields {
                 }
             }
             SearchType::PatternAdvanced(ref p) => {
-                if p.is_match(&line).unwrap() {
-                    Some(p.replace_all(&line, &self.replace_string).to_string())
-                } else {
-                    None
+                // TODO: try catch
+                match p.is_match(&line) {
+                    Ok(true) => Some(p.replace_all(&line, &self.replace_string).to_string()),
+                    _ => None,
                 }
             }
         };
