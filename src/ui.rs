@@ -3,7 +3,7 @@ use ratatui::{
     layout::{Alignment, Constraint, Direction, Flex, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, Clear, List, ListItem, Paragraph, Wrap},
+    widgets::{Block, Clear, List, ListItem, Paragraph},
     Frame,
 };
 use similar::{Change, ChangeTag, TextDiff};
@@ -64,7 +64,7 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
                     .lines()
                     .map(|line| {
                         Line::from(vec![Span::styled(
-                            format!("  {line}"),
+                            line.to_string(),
                             Style::default().fg(Color::Red),
                         )])
                     })
@@ -85,13 +85,11 @@ fn render_search_view(frame: &mut Frame<'_>, app: &App, rect: Rect) {
             Constraint::Length(content_height),
         );
 
-        let popup = Paragraph::new(error_lines)
-            .block(
-                Block::bordered()
-                    .title("Errors")
-                    .title_alignment(Alignment::Center),
-            )
-            .wrap(Wrap { trim: true });
+        let popup = Paragraph::new(error_lines).block(
+            Block::bordered()
+                .title("Errors")
+                .title_alignment(Alignment::Center),
+        );
         frame.render_widget(Clear, popup_area);
         frame.render_widget(popup, popup_area);
     } else if let Some(cursor_idx) = app.search_fields.highlighted_field().read().cursor_idx() {

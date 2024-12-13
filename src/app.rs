@@ -1,3 +1,5 @@
+use anyhow::Error;
+use fancy_regex::Regex as FancyRegex;
 use ignore::WalkState;
 use itertools::Itertools;
 use parking_lot::{
@@ -117,9 +119,9 @@ impl ReplaceState {
 pub struct SearchInProgressState {
     pub search_state: SearchState,
     pub last_render: Instant,
-    pub handle: JoinHandle<()>,
-    pub processing_sender: UnboundedSender<BackgroundProcessingEvent>,
-    pub processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
+    handle: JoinHandle<()>,
+    processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
 }
 
 impl SearchInProgressState {
@@ -151,7 +153,7 @@ pub enum Screen {
 }
 
 impl Screen {
-    pub fn search_results_mut(&mut self) -> &mut SearchState {
+    fn search_results_mut(&mut self) -> &mut SearchState {
         match self {
             Screen::SearchProgressing(SearchInProgressState { search_state, .. }) => search_state,
             Screen::SearchComplete(search_state) => search_state,
@@ -182,6 +184,7 @@ pub struct SearchFields {
     pub fields: [SearchField; NUM_SEARCH_FIELDS],
     pub highlighted: usize,
     pub show_error_popup: bool,
+    advanced_regex: bool,
 }
 
 macro_rules! define_field_accessor {
@@ -264,7 +267,13 @@ impl SearchFields {
             ],
             highlighted: 0,
             show_error_popup: false,
+            advanced_regex: false,
         }
+    }
+
+    pub fn with_advanced_regex(mut self, advanced_regex: bool) -> Self {
+        self.advanced_regex = advanced_regex;
+        self
     }
 
     fn highlighted_field_impl(&self) -> &SearchField {
@@ -306,8 +315,26 @@ impl SearchFields {
         let search_text = search.text();
         let result = if self.fixed_strings().checked {
             SearchType::Fixed(search_text)
+        } else if self.advanced_regex {
+            SearchType::PatternAdvanced(FancyRegex::new(&search_text)?)
         } else {
             SearchType::Pattern(Regex::new(&search_text)?)
+        };
+        Ok(result)
+    }
+
+    pub fn path_pattern_parsed(&self) -> anyhow::Result<Option<SearchType>> {
+        let path_patt_text = &self.path_pattern().text;
+        let result = if path_patt_text.is_empty() {
+            None
+        } else {
+            Some({
+                if self.advanced_regex {
+                    SearchType::PatternAdvanced(FancyRegex::new(path_patt_text)?)
+                } else {
+                    SearchType::Pattern(Regex::new(path_patt_text)?)
+                }
+            })
         };
         Ok(result)
     }
@@ -321,11 +348,10 @@ enum ValidatedField<T> {
 pub struct App {
     pub current_screen: Screen,
     pub search_fields: SearchFields,
-    pub directory: PathBuf,
-    pub include_hidden: bool,
+    directory: PathBuf,
+    include_hidden: bool,
 
-    pub running: bool,
-    pub app_event_sender: UnboundedSender<AppEvent>,
+    app_event_sender: UnboundedSender<AppEvent>,
 }
 
 const BINARY_EXTENSIONS: &[&str] = &["png", "gif", "jpg", "jpeg", "ico", "svg", "pdf"];
@@ -334,20 +360,22 @@ impl App {
     pub fn new(
         directory: Option<PathBuf>,
         include_hidden: bool,
+        advanced_regex: bool,
         app_event_sender: UnboundedSender<AppEvent>,
     ) -> Self {
         let directory = match directory {
             Some(d) => d,
             None => std::env::current_dir().unwrap(),
         };
+        let search_fields =
+            SearchFields::with_values("", "", false, "").with_advanced_regex(advanced_regex);
 
         Self {
             current_screen: Screen::SearchFields,
-            search_fields: SearchFields::with_values("", "", false, ""),
-            directory, // TODO: add this as a field that can be edited, e.g. allow glob patterns
+            search_fields,
+            directory,
             include_hidden,
 
-            running: true,
             app_event_sender,
         }
     }
@@ -366,6 +394,7 @@ impl App {
         *self = Self::new(
             Some(self.directory.clone()),
             self.include_hidden,
+            self.search_fields.advanced_regex,
             self.app_event_sender.clone(),
         );
     }
@@ -615,13 +644,18 @@ impl App {
         })
     }
 
+    fn is_regex_error(e: &Error) -> bool {
+        e.downcast_ref::<regex::Error>().is_some()
+            || e.downcast_ref::<fancy_regex::Error>().is_some()
+    }
+
     fn validate_fields(
         &mut self,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> anyhow::Result<Option<ParsedFields>> {
         let search_pattern = match self.search_fields.search_type() {
             Err(e) => {
-                if e.downcast_ref::<regex::Error>().is_some() {
+                if Self::is_regex_error(&e) {
                     self.search_fields
                         .search_mut()
                         .set_error("Couldn't parse regex".to_owned(), e.to_string());
@@ -633,19 +667,14 @@ impl App {
             Ok(p) => ValidatedField::Parsed(p),
         };
 
-        let path_pattern_text = self.search_fields.path_pattern().text();
-        let path_pattern = if path_pattern_text.is_empty() {
-            ValidatedField::Parsed(None)
-        } else {
-            match Regex::new(path_pattern_text.as_str()) {
-                Err(e) => {
-                    self.search_fields
-                        .path_pattern_mut()
-                        .set_error("Couldn't parse regex".to_owned(), e.to_string());
-                    ValidatedField::Error
-                }
-                Ok(r) => ValidatedField::Parsed(Some(r)),
+        let path_pattern = match self.search_fields.path_pattern_parsed() {
+            Err(e) => {
+                self.search_fields
+                    .path_pattern_mut()
+                    .set_error("Couldn't parse regex".to_owned(), e.to_string());
+                ValidatedField::Error
             }
+            Ok(r) => ValidatedField::Parsed(r),
         };
 
         let (search_pattern, path_pattern) = match (search_pattern, path_pattern) {
@@ -923,7 +952,7 @@ mod tests {
 
     fn build_test_app(results: Vec<SearchResult>) -> App {
         let event_handler = EventHandler::new();
-        let mut app = App::new(None, false, event_handler.app_event_sender);
+        let mut app = App::new(None, false, false, event_handler.app_event_sender);
         app.current_screen = Screen::SearchComplete(SearchState {
             results,
             selected: 0,

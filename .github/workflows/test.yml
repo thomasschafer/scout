@@ -33,10 +33,5 @@ jobs:
     - name: Lint
       run: cargo clippy
 
-    - name: Run tests (Windows)
-      if: matrix.os == 'windows-latest'
-      run: cargo test --verbose -- --test-threads=1
-
-    - name: Run tests (Unix)
-      if: matrix.os != 'windows-latest'
+    - name: Run tests
       run: cargo test --verbose
