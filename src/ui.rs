@@ -434,7 +434,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
             Box::new(render_confirmation_view)
         }
-        Screen::PerformingReplacement => {
+        Screen::PerformingReplacement(_) => {
             Box::new(render_loading_view("Performing replacement...".to_owned()))
         }
         Screen::Results(ref replace_state) => Box::new(render_results_view(replace_state)),
@@ -460,7 +460,7 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
             ]);
             keys
         }
-        Screen::PerformingReplacement => vec![],
+        Screen::PerformingReplacement(_) => vec![],
         Screen::Results(ref replace_state) => {
             if !replace_state.errors.is_empty() {
                 vec!["<j> down", "<k> up"]
@@ -470,11 +470,8 @@ pub fn render(app: &App, frame: &mut Frame<'_>) {
         }
     };
 
-    let additional_keys = if matches!(app.current_screen, Screen::PerformingReplacement) {
-        vec![]
-    } else {
-        vec!["<C-r> reset", "<esc> quit"]
-    };
+    let additional_keys = ["<C-r> reset", "<esc> quit"];
+
     let all_keys = current_keys
         .iter()
         .chain(additional_keys.iter())

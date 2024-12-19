@@ -144,11 +144,37 @@ impl SearchInProgressState {
 }
 
 #[derive(Debug)]
+pub struct PerformingReplacementState {
+    handle: Option<JoinHandle<()>>,
+    #[allow(dead_code)]
+    processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
+}
+
+impl PerformingReplacementState {
+    pub fn new(
+        handle: Option<JoinHandle<()>>,
+        processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+        processing_receiver: UnboundedReceiver<BackgroundProcessingEvent>,
+    ) -> Self {
+        Self {
+            handle,
+            processing_sender,
+            processing_receiver,
+        }
+    }
+
+    fn set_handle(&mut self, handle: JoinHandle<()>) {
+        self.handle = Some(handle);
+    }
+}
+
+#[derive(Debug)]
 pub enum Screen {
     SearchFields,
     SearchProgressing(SearchInProgressState),
     SearchComplete(SearchState),
-    PerformingReplacement,
+    PerformingReplacement(PerformingReplacementState),
     Results(ReplaceState),
 }
 
@@ -400,14 +426,16 @@ impl App {
     }
 
     pub async fn background_processing_recv(&mut self) -> Option<BackgroundProcessingEvent> {
-        if let Screen::SearchProgressing(SearchInProgressState {
-            processing_receiver,
-            ..
-        }) = &mut self.current_screen
-        {
-            processing_receiver.recv().await
-        } else {
-            None
+        match &mut self.current_screen {
+            Screen::SearchProgressing(SearchInProgressState {
+                processing_receiver,
+                ..
+            }) => processing_receiver.recv().await,
+            Screen::PerformingReplacement(PerformingReplacementState {
+                processing_receiver,
+                ..
+            }) => processing_receiver.recv().await,
+            _ => None,
         }
     }
 
@@ -432,9 +460,6 @@ impl App {
                 rerender: true,
             },
             AppEvent::PerformSearch => self.perform_search_if_valid(),
-            AppEvent::PerformReplacement(mut search_state) => {
-                self.perform_replacement(&mut search_state)
-            }
         }
     }
 
@@ -468,28 +493,60 @@ impl App {
         }
     }
 
-    pub fn perform_replacement(&mut self, search_state: &mut SearchState) -> EventHandlingResult {
-        for (path, results) in &search_state
-            .results
-            .iter_mut()
-            .filter(|res| res.included)
-            .chunk_by(|res| res.path.clone())
-        {
-            let mut results = results.collect::<Vec<_>>();
-            if let Err(file_err) = Self::replace_in_file(path, &mut results) {
-                results.iter_mut().for_each(|res| {
-                    res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
-                });
+    pub fn trigger_replacement(&mut self) {
+        let (background_processing_sender, background_processing_receiver) =
+            mpsc::unbounded_channel();
+
+        match mem::replace(
+            &mut self.current_screen,
+            Screen::PerformingReplacement(PerformingReplacementState::new(
+                None,
+                background_processing_sender.clone(),
+                background_processing_receiver,
+            )),
+        ) {
+            Screen::SearchComplete(search_state) => {
+                let handle = Self::perform_replacement(search_state, background_processing_sender);
+                if let Screen::PerformingReplacement(ref mut state) = &mut self.current_screen {
+                    state.set_handle(handle);
+                } else {
+                    panic!(
+                        "Expected screen to be PerformingReplacement, found {:?}",
+                        self.current_screen
+                    );
+                }
+            }
+            screen => {
+                self.current_screen = screen;
             }
         }
+    }
+    pub fn perform_replacement(
+        mut search_state: SearchState,
+        background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
+    ) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            for (path, results) in &search_state
+                .results
+                .iter_mut()
+                .filter(|res| res.included)
+                .chunk_by(|res| res.path.clone())
+            {
+                let mut results = results.collect::<Vec<_>>();
+                if let Err(file_err) = Self::replace_in_file(path, &mut results) {
+                    results.iter_mut().for_each(|res| {
+                        res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
+                    });
+                }
+            }
 
-        let replace_state = self.calculate_statistics(&search_state.results);
+            let replace_state = Self::calculate_statistics(&search_state.results);
 
-        self.current_screen = Screen::Results(replace_state);
-        EventHandlingResult {
-            exit: false,
-            rerender: true,
-        }
+            // Ignore error: we may have gone back to the previous screen
+            let _ = background_processing_sender.send(
+                BackgroundProcessingEvent::ReplacementCompleted(replace_state),
+            );
+        })
     }
 
     pub fn handle_background_processing_event(
@@ -521,6 +578,13 @@ impl App {
                 {
                     self.current_screen = Screen::SearchComplete(search_state);
                 }
+                EventHandlingResult {
+                    exit: false,
+                    rerender: true,
+                }
+            }
+            BackgroundProcessingEvent::ReplacementCompleted(replace_state) => {
+                self.current_screen = Screen::Results(replace_state);
                 EventHandlingResult {
                     exit: false,
                     rerender: true,
@@ -581,17 +645,7 @@ impl App {
                     .toggle_all_selected();
             }
             (KeyCode::Enter, _) => {
-                if matches!(self.current_screen, Screen::SearchComplete(_)) {
-                    if let Screen::SearchComplete(search_state) =
-                        mem::replace(&mut self.current_screen, Screen::PerformingReplacement)
-                    {
-                        self.app_event_sender
-                            .send(AppEvent::PerformReplacement(search_state))
-                            .unwrap();
-                    } else {
-                        panic!("Expected SearchComplete, found {:?}", self.current_screen);
-                    }
-                }
+                self.trigger_replacement();
             }
             (KeyCode::Char('o'), KeyModifiers::CONTROL) => {
                 self.cancel_search();
@@ -635,7 +689,7 @@ impl App {
             Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
                 self.handle_key_confirmation(key)
             }
-            Screen::PerformingReplacement => false,
+            Screen::PerformingReplacement(_) => false, // TODO: handle keys here
             Screen::Results(replace_state) => replace_state.handle_key_results(key),
         };
         Ok(EventHandlingResult {
@@ -741,7 +795,7 @@ impl App {
         false
     }
 
-    fn calculate_statistics(&self, results: &[SearchResult]) -> ReplaceState {
+    fn calculate_statistics(results: &[SearchResult]) -> ReplaceState {
         let mut num_successes = 0;
         let mut num_ignored = 0;
         let mut errors = vec![];
@@ -964,7 +1018,7 @@ mod tests {
     async fn test_calculate_statistics_all_success() {
         let app = build_test_app(vec![success_result(), success_result(), success_result()]);
         let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
-            app.calculate_statistics(&search_state.results)
+            App::calculate_statistics(&search_state.results)
         } else {
             panic!("Expected SearchComplete");
         };
@@ -991,7 +1045,7 @@ mod tests {
             ignored_result(),
         ]);
         let stats = if let Screen::SearchComplete(search_state) = &app.current_screen {
-            app.calculate_statistics(&search_state.results)
+            App::calculate_statistics(&search_state.results)
         } else {
             panic!("Expected SearchComplete");
         };

@@ -3,7 +3,7 @@ use futures::StreamExt;
 use std::path::PathBuf;
 use tokio::sync::mpsc;
 
-use crate::app::SearchState;
+use crate::app::ReplaceState;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ReplaceResult {
@@ -25,13 +25,13 @@ pub struct SearchResult {
 pub enum AppEvent {
     Rerender,
     PerformSearch,
-    PerformReplacement(SearchState),
 }
 
 #[derive(Debug)]
 pub enum BackgroundProcessingEvent {
     AddSearchResult(SearchResult),
     SearchCompleted,
+    ReplacementCompleted(ReplaceState),
 }
 
 #[derive(Debug)]
