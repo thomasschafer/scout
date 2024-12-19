@@ -5,7 +5,6 @@ use scooter::{
 use serial_test::serial;
 use std::cmp::max;
 use std::fs::{self, create_dir_all};
-use std::mem;
 use std::path::{Path, PathBuf};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
@@ -289,6 +288,7 @@ fn setup_app(temp_dir: &TempDir, search_fields: SearchFields, include_hidden: bo
     app
 }
 
+// TODO: simplify this test - it is somewhat tied to the current implementation
 async fn search_and_replace_test(
     temp_dir: &TempDir,
     search_fields: SearchFields,
@@ -307,10 +307,7 @@ async fn search_and_replace_test(
     process_bp_events(&mut app).await;
     assert!(wait_for_screen!(&app, Screen::SearchComplete));
 
-    // TODO: this mem::replace needs to be kept in sync with the same action that happens in app.rs - can we fix this?
-    let mut search_state = if let Screen::SearchComplete(search_state) =
-        mem::replace(&mut app.current_screen, Screen::PerformingReplacement)
-    {
+    if let Screen::SearchComplete(search_state) = &mut app.current_screen {
         for (file_path, num_matches) in &expected_matches {
             assert_eq!(
                 search_state
@@ -327,8 +324,6 @@ async fn search_and_replace_test(
         }
 
         assert_eq!(search_state.results.len(), num_expected_matches);
-
-        search_state
     } else {
         panic!(
             "Expected SearchComplete results, found {:?}",
@@ -336,7 +331,10 @@ async fn search_and_replace_test(
         );
     };
 
-    app.perform_replacement(&mut search_state);
+    app.trigger_replacement();
+
+    process_bp_events(&mut app).await;
+    assert!(wait_for_screen!(&app, Screen::Results));
 
     if let Screen::Results(search_state) = &app.current_screen {
         assert_eq!(search_state.num_successes, num_expected_matches);
