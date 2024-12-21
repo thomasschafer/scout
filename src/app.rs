@@ -1,7 +1,7 @@
 use anyhow::Error;
 use fancy_regex::Regex as FancyRegex;
 use ignore::WalkState;
-use itertools::Itertools;
+use log::error;
 use parking_lot::{
     MappedRwLockReadGuard, MappedRwLockWriteGuard, RwLock, RwLockReadGuard, RwLockWriteGuard,
 };
@@ -9,12 +9,14 @@ use ratatui::crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use regex::Regex;
 use std::{
     collections::HashMap,
-    fs::{self, File},
-    io::{BufRead, BufReader, BufWriter, Write},
     mem,
     path::{Path, PathBuf},
     sync::Arc,
     time::{Duration, Instant},
+};
+use tokio::{
+    fs::{self, File},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufWriter},
 };
 use tokio::{
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
@@ -412,11 +414,21 @@ impl App {
         {
             handle.abort();
         }
-        self.current_screen = Screen::SearchFields;
+    }
+
+    pub fn cancel_replacement(&mut self) {
+        if let Screen::PerformingReplacement(PerformingReplacementState {
+            handle: Some(ref mut handle),
+            ..
+        }) = &mut self.current_screen
+        {
+            handle.abort()
+        }
     }
 
     pub fn reset(&mut self) {
         self.cancel_search();
+        self.cancel_replacement();
         *self = Self::new(
             Some(self.directory.clone()),
             self.include_hidden,
@@ -521,19 +533,19 @@ impl App {
             }
         }
     }
+
     pub fn perform_replacement(
         mut search_state: SearchState,
         background_processing_sender: UnboundedSender<BackgroundProcessingEvent>,
     ) -> JoinHandle<()> {
         tokio::spawn(async move {
-            for (path, results) in &search_state
-                .results
-                .iter_mut()
-                .filter(|res| res.included)
-                .chunk_by(|res| res.path.clone())
-            {
-                let mut results = results.collect::<Vec<_>>();
-                if let Err(file_err) = Self::replace_in_file(path, &mut results) {
+            let mut path_groups: HashMap<PathBuf, Vec<&mut SearchResult>> = HashMap::new();
+            for res in search_state.results.iter_mut().filter(|res| res.included) {
+                path_groups.entry(res.path.clone()).or_default().push(res);
+            }
+
+            for (path, mut results) in path_groups {
+                if let Err(file_err) = Self::replace_in_file(path, &mut results).await {
                     results.iter_mut().for_each(|res| {
                         res.replace_result = Some(ReplaceResult::Error(file_err.to_string()))
                     });
@@ -669,6 +681,7 @@ impl App {
             (KeyCode::Esc, _) | (KeyCode::Char('c'), KeyModifiers::CONTROL)
                 if !self.search_fields.show_error_popup =>
             {
+                self.reset();
                 return Ok(EventHandlingResult {
                     exit: true,
                     rerender: true,
@@ -689,7 +702,7 @@ impl App {
             Screen::SearchProgressing(_) | Screen::SearchComplete(_) => {
                 self.handle_key_confirmation(key)
             }
-            Screen::PerformingReplacement(_) => false, // TODO: handle keys here
+            Screen::PerformingReplacement(_) => false,
             Screen::Results(replace_state) => replace_state.handle_key_results(key),
         };
         Ok(EventHandlingResult {
@@ -755,6 +768,7 @@ impl App {
     ) -> JoinHandle<()> {
         let walker = parsed_fields.build_walker();
 
+        // TODO: make this async with tokio fs operations
         tokio::spawn(async move {
             walker.run(|| {
                 let parsed_fields = parsed_fields.clone();
@@ -829,22 +843,23 @@ impl App {
         }
     }
 
-    fn replace_in_file(
+    async fn replace_in_file(
         file_path: PathBuf,
         results: &mut [&mut SearchResult],
     ) -> anyhow::Result<()> {
         let mut line_map: HashMap<_, _> =
             HashMap::from_iter(results.iter_mut().map(|res| (res.line_number, res)));
 
-        let input = File::open(file_path.clone())?;
+        let input = File::open(file_path.clone()).await?;
         let buffered = BufReader::new(input);
 
         let temp_file_path = file_path.with_extension("tmp");
-        let output = File::create(temp_file_path.clone())?;
+        let output = File::create(temp_file_path.clone()).await?;
         let mut writer = BufWriter::new(output);
 
-        for (index, line) in buffered.lines().enumerate() {
-            let mut line = line?;
+        let mut lines = buffered.lines();
+        let mut index = 0;
+        while let Some(mut line) = lines.next_line().await? {
             if let Some(res) = line_map.get_mut(&(index + 1)) {
                 if line == res.line {
                     line.clone_from(&res.replacement);
@@ -855,11 +870,12 @@ impl App {
                     ));
                 }
             }
-            writeln!(writer, "{}", line)?;
+            writer.write_all(line.as_bytes()).await?;
+            index += 1;
         }
 
-        writer.flush()?;
-        fs::rename(temp_file_path, file_path)?;
+        writer.flush().await?;
+        fs::rename(temp_file_path, file_path).await?;
         Ok(())
     }
 
